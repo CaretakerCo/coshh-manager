@@ -1674,7 +1674,7 @@ ${JSON_RULES}`;
 
 // --- PRINT PREVIEW ------------------------------------------------------------
 function PrintPreview({p, school, addr}) {
-  const chk = v => v ? "[X]" : "[ ]";
+  const chk = v => v ? "Yes" : "No";
   const c = p || {};
   const ctrl = c.controls || c; // support both formats
 
@@ -1686,7 +1686,7 @@ function PrintPreview({p, school, addr}) {
         background:sel?"#fff8f0":"white",opacity:sel?1:.35}}>
         <img src={HIMGS[h.img]} alt={h.label} style={{width:26,height:26,objectFit:"contain"}} />
         <div style={{fontSize:"5.5pt",textAlign:"center",lineHeight:1.2,marginTop:2}}>{h.label}</div>
-        <div style={{fontSize:"9pt"}}>{sel?"[X]":"[ ]"}</div>
+        <div style={{fontSize:"9pt"}}>{sel?"Yes":"No"}</div>
       </div>
     );
   });
