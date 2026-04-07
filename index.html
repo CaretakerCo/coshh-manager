@@ -1674,7 +1674,7 @@ ${JSON_RULES}`;
 
 // --- PRINT PREVIEW ------------------------------------------------------------
 function PrintPreview({p, school, addr}) {
-  const chk = v => v ? "\u2611" : "\u2610";
+  const chk = v => v ? "[X]" : "[ ]";
   const c = p || {};
   const ctrl = c.controls || c; // support both formats
 
