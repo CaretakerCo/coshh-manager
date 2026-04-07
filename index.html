@@ -17,6 +17,189 @@
   <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
   <script type="text/babel" data-type="module">
+
+function PrintPreview({p, school, addr}) {
+  const chk = v => v ? "Yes" : "No";
+  const c = p || {};
+  const ctrl = c.controls || c; // support both formats
+
+  const hazCells = HAZARDS.map(h => {
+    const sel = (c.hazards||[]).includes(h.key);
+    return (
+      <div key={h.key} style={{display:"flex",flexDirection:"column",alignItems:"center",
+        border:sel?"2px solid #c00":"1px solid #ccc",padding:3,width:76,
+        background:sel?"#fff8f0":"white",opacity:sel?1:.35}}>
+        <img src={HIMGS[h.img]} alt={h.label} style={{width:26,height:26,objectFit:"contain"}} />
+        <div style={{fontSize:"5.5pt",textAlign:"center",lineHeight:1.2,marginTop:2}}>{h.label}</div>
+        <div style={{fontSize:"9pt"}}>{sel?"Yes":"No"}</div>
+      </div>
+    );
+  });
+
+  const td = {border:"1px solid #666",padding:"3px 5px",verticalAlign:"top",fontSize:"7.5pt"};
+  const th = {...td,background:"#d4edda",fontWeight:"bold",fontSize:"7pt"};
+
+  return (
+    <div className="print-area" style={{background:"white",maxWidth:1060,margin:"0 auto",
+      padding:"16px 20px",boxShadow:"0 4px 24px rgba(0,0,0,.12)",fontFamily:"Arial,sans-serif",
+      fontSize:"8pt",color:"#000",lineHeight:1.3}}>
+
+      <div style={{textAlign:"center",fontWeight:"bold",fontSize:"12pt",borderBottom:"2px solid #000",paddingBottom:6,marginBottom:4}}>
+        COSHH Assessment Form - Subject to Control of Substances Hazardous to Health Regulations
+      </div>
+      <div style={{textAlign:"center",fontSize:"7.5pt",color:"#333",marginBottom:8,fontStyle:"italic"}}>
+        {school && <strong>{school}</strong>}{addr && ` - ${addr}`}<br/>
+        This risk assessment is to be used to identify risks and control measures for hazardous substances but not Zoonosis or Biological agents.
+      </div>
+      <div style={{background:"#fff8dc",border:"1px solid #e6c800",padding:"3px 6px",fontSize:"6.5pt",fontStyle:"italic",marginBottom:6}}>
+        Note: The use of pesticides/herbicides must be recorded on the Pesticide Record sheet.
+      </div>
+
+      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:4}}>
+        <tbody>
+          <tr>
+            <th style={th}>Name of Hazardous Substance / Description of Process</th>
+            <th style={th}>Location</th><th style={th}>Task / Process</th>
+            <th style={th}>Date of Assessment</th><th style={th}>Date of Review</th>
+          </tr>
+          <tr>
+            <td style={td}><strong>{c.productName}</strong>{c.processDesc&&<><br/><span style={{fontSize:"7pt",color:"#555"}}>{c.processDesc}</span></>}</td>
+            <td style={td}>{c.location}</td><td style={td}>{c.task}</td>
+            <td style={td}>{c.assessDate ? new Date(c.assessDate).toLocaleDateString("en-GB") : "-"}</td>
+            <td style={td}>{c.reviewDate ? new Date(c.reviewDate).toLocaleDateString("en-GB") : "-"}</td>
+          </tr>
+          <tr>
+            <th style={th}>Manufacturer</th><th style={{...th}} colSpan={2}>Address</th>
+            <th style={th}>Tel</th><th style={th}>SDS Ref & Date</th>
+          </tr>
+          <tr>
+            <td style={td}>{c.manufacturer}</td><td style={td} colSpan={2}>{c.mfrAddress}</td>
+            <td style={td}>{c.mfrTel}</td>
+            <td style={td}>
+              {c.sdsRef}<br/>
+              <span style={{fontSize:"6.5pt"}}>SDS Attached: {c.sdsAttached||"Yes"}</span>
+              {c.sdsUrl && <><br/><span style={{fontSize:"6pt",color:"#1a5c32"}}>URL: {c.sdsUrl}</span></>}
+              {c.sdsFilename && <><br/><span style={{fontSize:"6pt",color:"#16a34a"}}>File: {c.sdsFilename}</span></>}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style={{background:"#1a5c32",color:"white",fontWeight:"bold",fontSize:"7.5pt",padding:"3px 6px",marginBottom:0}}>
+        HAZARD CLASSIFICATION - Tick Appropriate Boxes
+      </div>
+      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:4}}>
+        <tbody><tr>
+          <td style={{...td,width:"62%"}}>
+            <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:4}}>{hazCells}</div>
+            <div><strong style={{fontSize:"6.5pt"}}>H Phrases: </strong><span style={{fontSize:"7.5pt"}}>{c.hPhrases||"-"}</span></div>
+          </td>
+          <td style={td}>
+            <strong style={{fontSize:"6.5pt",display:"block",marginBottom:4}}>About the Substance</strong>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:"7pt"}}>
+              <tbody>
+                <tr><td style={{padding:2}}><strong>Form:</strong> {c.substanceForm||"-"}</td><td style={{padding:2}}><strong>Dilution:</strong> {c.dilution||"-"}</td></tr>
+                <tr><td colSpan={2} style={{padding:2}}><strong>Route of Entry:</strong> {(c.routeOfEntry||[]).join(", ")||"-"}</td></tr>
+                <tr><td style={{padding:2}}><strong>WEL?</strong> {c.wel||"-"}</td><td style={{padding:2}}><strong>Exceeded?</strong> {c.welExceeded||"-"}</td></tr>
+                <tr><td colSpan={2} style={{padding:2}}><strong>H&S advisor contacted?</strong> {c.welHSContacted||"N/A"}</td></tr>
+                <tr><td colSpan={2} style={{padding:2}}><strong>Amount stored:</strong> {c.amountStored||"-"} | <strong>Per op:</strong> {c.amountUsed||"-"}</td></tr>
+                <tr><td style={{padding:2}}><strong>Duration:</strong> {c.duration||"-"}</td><td style={{padding:2}}><strong>Frequency:</strong> {c.frequency||"-"}</td></tr>
+              </tbody>
+            </table>
+          </td>
+        </tr></tbody>
+      </table>
+
+      <div style={{background:"#1a5c32",color:"white",fontWeight:"bold",fontSize:"7.5pt",padding:"3px 6px"}}>
+        CONTROLS REQUIRED - <span style={{fontWeight:"normal"}}>NB: Controls are identified within Safety Data Sheets and guidance found in the Corporate PPE procedure.</span>
+      </div>
+      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:4}}>
+        <tbody>
+          <tr>
+            <td style={{...td,width:"12%"}}><strong>Ventilation</strong></td>
+            <td style={td}>{chk(c.ventGeneral)} General   {chk(c.ventLEV)} LEV   {chk(c.airMonitor)} Air Monitor   {chk(c.ventNA)} N/A</td>
+            <td style={{...td,width:"12%"}}><strong>Skin Protection</strong></td>
+            <td style={td}>{chk(c.preCreams)} Pre-work Creams   {chk(c.gloves)} Gloves   {chk(c.apron)} Apron   {chk(c.footwear)} Footwear{c.footwearType&&`: ${c.footwearType}`}   {chk(c.skinNA)} N/A</td>
+          </tr>
+          <tr>
+            <td style={td}><strong>Respiratory</strong></td>
+            <td style={td}>{chk(c.halfMask)} Half Mask   {chk(c.fullMask)} Full Mask   {chk(c.dustMask)} Dust Mask   {chk(c.respNA)} N/A {c.protFactor&&`- RPF: ${c.protFactor}`}</td>
+            <td style={td}><strong>Eye & Face</strong></td>
+            <td style={td}>{chk(c.safetySpecs)} Spectacles   {chk(c.goggles)} Goggles   {chk(c.faceShield)} Face Shield   {chk(c.eyeNA)} N/A</td>
+          </tr>
+          <tr>
+            <td style={td} colSpan={2}><strong>Health Surveillance: </strong>{chk(c.staffTrained)} Self-exam   {chk(c.healthSurv)} Surveillance req.   {chk(c.occupHealth)} OCU programme   {chk(c.sysMonitored)} System monitored</td>
+            <td style={td} colSpan={2}>
+                <strong>Stand-alone product?</strong> {c.standalone||"-"}  | 
+                <strong>Used in combination?</strong> {c.accumulated||"-"}  | 
+                <strong>Accumulation considered?</strong> {c.separateAssess||"-"}  | 
+                <strong>Separate assessment in place?</strong> {c.separateAssessConfirm?"Yes":"No"}
+              </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style={{background:"#1a5c32",color:"white",fontWeight:"bold",fontSize:"7.5pt",padding:"3px 6px"}}>
+        SAFE WORKING INSTRUCTIONS FOR OPERATIVE - <span style={{fontWeight:"normal"}}>Share with all persons carrying out tasks where hazardous substances are used.</span>
+      </div>
+      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:4}}>
+        <tbody>
+          <tr>
+            <th style={{...th,width:"17%"}}>Storage (location, conditions, compatibility)</th>
+            <th style={{...th,width:"22%"}}>Instructions for Use (dilution, application, ventilation)</th>
+            <th style={{...th,width:"15%"}}>Control Measures (PPE, LEV, barriers)</th>
+            <th style={{...th,width:"15%"}}>Clean Up & Disposal</th>
+            <th style={{...th,width:"16%"}}>First Aid</th>
+            <th style={{...th,width:"15%"}}>Fire Precautions</th>
+          </tr>
+          <tr style={{verticalAlign:"top"}}>
+            <td style={{...td,minHeight:40}}>{c.storage}</td>
+            <td style={td}>{c.useInstructions}</td>
+            <td style={td}>{c.controlMeasures}</td>
+            <td style={td}>{c.disposal}</td>
+            <td style={td}>{c.firstAid}</td>
+            <td style={td}>{c.fire}</td>
+          </tr>
+          {c.notes && <><tr><th style={{...th}} colSpan={6}>Further Considerations</th></tr>
+          <tr><td style={td} colSpan={6}>{c.notes}</td></tr></>}
+        </tbody>
+      </table>
+
+      <div style={{background:"#1a5c32",color:"white",fontWeight:"bold",fontSize:"7.5pt",padding:"3px 6px"}}>SIGN-OFF</div>
+      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:6}}>
+        <tbody>
+          <tr>
+            <td style={{...td,width:"44%",fontSize:"7pt"}}>As the <strong>Assessor</strong> I have considered the current, and any additional controls. I consider this activity to have been reduced to a level that is acceptable or as low as is reasonably practicable.</td>
+            <th style={th}>Name / Job Title</th><th style={th}>Signed</th><th style={th}>Date</th>
+          </tr>
+          <tr>
+            <td style={{...td,fontSize:"7pt",fontStyle:"italic"}}>Assessor</td>
+            <td style={{...td,height:32}}>{c.assessorName}{c.assessorTitle&&` / ${c.assessorTitle}`}</td>
+            <td style={{...td,height:32,borderBottom:"1px solid #333"}}> </td>
+            <td style={{...td,height:32}}>{c.assessDate ? new Date(c.assessDate).toLocaleDateString("en-GB") : ""}</td>
+          </tr>
+          <tr>
+            <td style={{...td,fontSize:"7pt"}}>As the <strong>Responsible Manager</strong>, I can confirm that the information provided is relevant to the individual substance for the purpose of its use on this occasion. I have informed all other persons using this substance of the control measures in place.</td>
+            <th style={th}>Name / Job Title</th><th style={th}>Signed</th><th style={th}>Date</th>
+          </tr>
+          <tr>
+            <td style={{...td,fontSize:"7pt",fontStyle:"italic"}}>Responsible Manager</td>
+            <td style={{...td,height:32}}>{c.managerName}{c.managerTitle&&` / ${c.managerTitle}`}</td>
+            <td style={{...td,height:32,borderBottom:"1px solid #333"}}> </td>
+            <td style={{...td,height:32,borderBottom:"1px solid #333"}}> </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style={{fontSize:"6pt",color:"#555",borderTop:"1px solid #ccc",paddingTop:4}}>
+        <strong>Original risk assessments must be kept for a period of 40 years.</strong> On completion a hard copy should be printed off and placed in your local/site health and safety folder and hazards, risks and control measures implemented should be communicated to all individuals identified at risk within this risk assessment. | Generated: {new Date().toLocaleDateString("en-GB")} | {school}
+      </div>
+    </div>
+  );
+}
+
+  </script>
+  <script type="text/babel" data-type="module">
 const { useState, useEffect, useCallback, useRef } = React;
 
 // --- SUPABASE CONFIG ----------------------------------------------------------
@@ -1669,186 +1852,6 @@ ${JSON_RULES}`;
           </div>
         )}
       </div>
-  );
-}
-
-function PrintPreview({p, school, addr}) {
-  const chk = v => v ? "Yes" : "No";
-  const c = p || {};
-  const ctrl = c.controls || c; // support both formats
-
-  const hazCells = HAZARDS.map(h => {
-    const sel = (c.hazards||[]).includes(h.key);
-    return (
-      <div key={h.key} style={{display:"flex",flexDirection:"column",alignItems:"center",
-        border:sel?"2px solid #c00":"1px solid #ccc",padding:3,width:76,
-        background:sel?"#fff8f0":"white",opacity:sel?1:.35}}>
-        <img src={HIMGS[h.img]} alt={h.label} style={{width:26,height:26,objectFit:"contain"}} />
-        <div style={{fontSize:"5.5pt",textAlign:"center",lineHeight:1.2,marginTop:2}}>{h.label}</div>
-        <div style={{fontSize:"9pt"}}>{sel?"Yes":"No"}</div>
-      </div>
-    );
-  });
-
-  const td = {border:"1px solid #666",padding:"3px 5px",verticalAlign:"top",fontSize:"7.5pt"};
-  const th = {...td,background:"#d4edda",fontWeight:"bold",fontSize:"7pt"};
-
-  return (
-    <div className="print-area" style={{background:"white",maxWidth:1060,margin:"0 auto",
-      padding:"16px 20px",boxShadow:"0 4px 24px rgba(0,0,0,.12)",fontFamily:"Arial,sans-serif",
-      fontSize:"8pt",color:"#000",lineHeight:1.3}}>
-
-      <div style={{textAlign:"center",fontWeight:"bold",fontSize:"12pt",borderBottom:"2px solid #000",paddingBottom:6,marginBottom:4}}>
-        COSHH Assessment Form - Subject to Control of Substances Hazardous to Health Regulations
-      </div>
-      <div style={{textAlign:"center",fontSize:"7.5pt",color:"#333",marginBottom:8,fontStyle:"italic"}}>
-        {school && <strong>{school}</strong>}{addr && ` - ${addr}`}<br/>
-        This risk assessment is to be used to identify risks and control measures for hazardous substances but not Zoonosis or Biological agents.
-      </div>
-      <div style={{background:"#fff8dc",border:"1px solid #e6c800",padding:"3px 6px",fontSize:"6.5pt",fontStyle:"italic",marginBottom:6}}>
-        Note: The use of pesticides/herbicides must be recorded on the Pesticide Record sheet.
-      </div>
-
-      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:4}}>
-        <tbody>
-          <tr>
-            <th style={th}>Name of Hazardous Substance / Description of Process</th>
-            <th style={th}>Location</th><th style={th}>Task / Process</th>
-            <th style={th}>Date of Assessment</th><th style={th}>Date of Review</th>
-          </tr>
-          <tr>
-            <td style={td}><strong>{c.productName}</strong>{c.processDesc&&<><br/><span style={{fontSize:"7pt",color:"#555"}}>{c.processDesc}</span></>}</td>
-            <td style={td}>{c.location}</td><td style={td}>{c.task}</td>
-            <td style={td}>{c.assessDate ? new Date(c.assessDate).toLocaleDateString("en-GB") : "-"}</td>
-            <td style={td}>{c.reviewDate ? new Date(c.reviewDate).toLocaleDateString("en-GB") : "-"}</td>
-          </tr>
-          <tr>
-            <th style={th}>Manufacturer</th><th style={{...th}} colSpan={2}>Address</th>
-            <th style={th}>Tel</th><th style={th}>SDS Ref & Date</th>
-          </tr>
-          <tr>
-            <td style={td}>{c.manufacturer}</td><td style={td} colSpan={2}>{c.mfrAddress}</td>
-            <td style={td}>{c.mfrTel}</td>
-            <td style={td}>
-              {c.sdsRef}<br/>
-              <span style={{fontSize:"6.5pt"}}>SDS Attached: {c.sdsAttached||"Yes"}</span>
-              {c.sdsUrl && <><br/><span style={{fontSize:"6pt",color:"#1a5c32"}}>URL: {c.sdsUrl}</span></>}
-              {c.sdsFilename && <><br/><span style={{fontSize:"6pt",color:"#16a34a"}}>File: {c.sdsFilename}</span></>}
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div style={{background:"#1a5c32",color:"white",fontWeight:"bold",fontSize:"7.5pt",padding:"3px 6px",marginBottom:0}}>
-        HAZARD CLASSIFICATION - Tick Appropriate Boxes
-      </div>
-      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:4}}>
-        <tbody><tr>
-          <td style={{...td,width:"62%"}}>
-            <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:4}}>{hazCells}</div>
-            <div><strong style={{fontSize:"6.5pt"}}>H Phrases: </strong><span style={{fontSize:"7.5pt"}}>{c.hPhrases||"-"}</span></div>
-          </td>
-          <td style={td}>
-            <strong style={{fontSize:"6.5pt",display:"block",marginBottom:4}}>About the Substance</strong>
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:"7pt"}}>
-              <tbody>
-                <tr><td style={{padding:2}}><strong>Form:</strong> {c.substanceForm||"-"}</td><td style={{padding:2}}><strong>Dilution:</strong> {c.dilution||"-"}</td></tr>
-                <tr><td colSpan={2} style={{padding:2}}><strong>Route of Entry:</strong> {(c.routeOfEntry||[]).join(", ")||"-"}</td></tr>
-                <tr><td style={{padding:2}}><strong>WEL?</strong> {c.wel||"-"}</td><td style={{padding:2}}><strong>Exceeded?</strong> {c.welExceeded||"-"}</td></tr>
-                <tr><td colSpan={2} style={{padding:2}}><strong>H&S advisor contacted?</strong> {c.welHSContacted||"N/A"}</td></tr>
-                <tr><td colSpan={2} style={{padding:2}}><strong>Amount stored:</strong> {c.amountStored||"-"} | <strong>Per op:</strong> {c.amountUsed||"-"}</td></tr>
-                <tr><td style={{padding:2}}><strong>Duration:</strong> {c.duration||"-"}</td><td style={{padding:2}}><strong>Frequency:</strong> {c.frequency||"-"}</td></tr>
-              </tbody>
-            </table>
-          </td>
-        </tr></tbody>
-      </table>
-
-      <div style={{background:"#1a5c32",color:"white",fontWeight:"bold",fontSize:"7.5pt",padding:"3px 6px"}}>
-        CONTROLS REQUIRED - <span style={{fontWeight:"normal"}}>NB: Controls are identified within Safety Data Sheets and guidance found in the Corporate PPE procedure.</span>
-      </div>
-      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:4}}>
-        <tbody>
-          <tr>
-            <td style={{...td,width:"12%"}}><strong>Ventilation</strong></td>
-            <td style={td}>{chk(c.ventGeneral)} General   {chk(c.ventLEV)} LEV   {chk(c.airMonitor)} Air Monitor   {chk(c.ventNA)} N/A</td>
-            <td style={{...td,width:"12%"}}><strong>Skin Protection</strong></td>
-            <td style={td}>{chk(c.preCreams)} Pre-work Creams   {chk(c.gloves)} Gloves   {chk(c.apron)} Apron   {chk(c.footwear)} Footwear{c.footwearType&&`: ${c.footwearType}`}   {chk(c.skinNA)} N/A</td>
-          </tr>
-          <tr>
-            <td style={td}><strong>Respiratory</strong></td>
-            <td style={td}>{chk(c.halfMask)} Half Mask   {chk(c.fullMask)} Full Mask   {chk(c.dustMask)} Dust Mask   {chk(c.respNA)} N/A {c.protFactor&&`- RPF: ${c.protFactor}`}</td>
-            <td style={td}><strong>Eye & Face</strong></td>
-            <td style={td}>{chk(c.safetySpecs)} Spectacles   {chk(c.goggles)} Goggles   {chk(c.faceShield)} Face Shield   {chk(c.eyeNA)} N/A</td>
-          </tr>
-          <tr>
-            <td style={td} colSpan={2}><strong>Health Surveillance: </strong>{chk(c.staffTrained)} Self-exam   {chk(c.healthSurv)} Surveillance req.   {chk(c.occupHealth)} OCU programme   {chk(c.sysMonitored)} System monitored</td>
-            <td style={td} colSpan={2}>
-                <strong>Stand-alone product?</strong> {c.standalone||"-"}  | 
-                <strong>Used in combination?</strong> {c.accumulated||"-"}  | 
-                <strong>Accumulation considered?</strong> {c.separateAssess||"-"}  | 
-                <strong>Separate assessment in place?</strong> {c.separateAssessConfirm?"Yes":"No"}
-              </td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div style={{background:"#1a5c32",color:"white",fontWeight:"bold",fontSize:"7.5pt",padding:"3px 6px"}}>
-        SAFE WORKING INSTRUCTIONS FOR OPERATIVE - <span style={{fontWeight:"normal"}}>Share with all persons carrying out tasks where hazardous substances are used.</span>
-      </div>
-      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:4}}>
-        <tbody>
-          <tr>
-            <th style={{...th,width:"17%"}}>Storage (location, conditions, compatibility)</th>
-            <th style={{...th,width:"22%"}}>Instructions for Use (dilution, application, ventilation)</th>
-            <th style={{...th,width:"15%"}}>Control Measures (PPE, LEV, barriers)</th>
-            <th style={{...th,width:"15%"}}>Clean Up & Disposal</th>
-            <th style={{...th,width:"16%"}}>First Aid</th>
-            <th style={{...th,width:"15%"}}>Fire Precautions</th>
-          </tr>
-          <tr style={{verticalAlign:"top"}}>
-            <td style={{...td,minHeight:40}}>{c.storage}</td>
-            <td style={td}>{c.useInstructions}</td>
-            <td style={td}>{c.controlMeasures}</td>
-            <td style={td}>{c.disposal}</td>
-            <td style={td}>{c.firstAid}</td>
-            <td style={td}>{c.fire}</td>
-          </tr>
-          {c.notes && <><tr><th style={{...th}} colSpan={6}>Further Considerations</th></tr>
-          <tr><td style={td} colSpan={6}>{c.notes}</td></tr></>}
-        </tbody>
-      </table>
-
-      <div style={{background:"#1a5c32",color:"white",fontWeight:"bold",fontSize:"7.5pt",padding:"3px 6px"}}>SIGN-OFF</div>
-      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:6}}>
-        <tbody>
-          <tr>
-            <td style={{...td,width:"44%",fontSize:"7pt"}}>As the <strong>Assessor</strong> I have considered the current, and any additional controls. I consider this activity to have been reduced to a level that is acceptable or as low as is reasonably practicable.</td>
-            <th style={th}>Name / Job Title</th><th style={th}>Signed</th><th style={th}>Date</th>
-          </tr>
-          <tr>
-            <td style={{...td,fontSize:"7pt",fontStyle:"italic"}}>Assessor</td>
-            <td style={{...td,height:32}}>{c.assessorName}{c.assessorTitle&&` / ${c.assessorTitle}`}</td>
-            <td style={{...td,height:32,borderBottom:"1px solid #333"}}> </td>
-            <td style={{...td,height:32}}>{c.assessDate ? new Date(c.assessDate).toLocaleDateString("en-GB") : ""}</td>
-          </tr>
-          <tr>
-            <td style={{...td,fontSize:"7pt"}}>As the <strong>Responsible Manager</strong>, I can confirm that the information provided is relevant to the individual substance for the purpose of its use on this occasion. I have informed all other persons using this substance of the control measures in place.</td>
-            <th style={th}>Name / Job Title</th><th style={th}>Signed</th><th style={th}>Date</th>
-          </tr>
-          <tr>
-            <td style={{...td,fontSize:"7pt",fontStyle:"italic"}}>Responsible Manager</td>
-            <td style={{...td,height:32}}>{c.managerName}{c.managerTitle&&` / ${c.managerTitle}`}</td>
-            <td style={{...td,height:32,borderBottom:"1px solid #333"}}> </td>
-            <td style={{...td,height:32,borderBottom:"1px solid #333"}}> </td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div style={{fontSize:"6pt",color:"#555",borderTop:"1px solid #ccc",paddingTop:4}}>
-        <strong>Original risk assessments must be kept for a period of 40 years.</strong> On completion a hard copy should be printed off and placed in your local/site health and safety folder and hazards, risks and control measures implemented should be communicated to all individuals identified at risk within this risk assessment. | Generated: {new Date().toLocaleDateString("en-GB")} | {school}
-      </div>
-    </div>
   );
 }
 
