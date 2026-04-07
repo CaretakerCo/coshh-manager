@@ -1,0 +1,1860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>COSHH Manager - Hampshire Schools</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'DM Sans', system-ui, sans-serif; background: #f8fafc; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
+  <script type="text/babel" data-type="module">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// --- SUPABASE CONFIG ----------------------------------------------------------
+const SUPA_URL = "https://sygvcscvmkylymsdhens.supabase.co";
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN5Z3Zjc2N2bWt5bHltc2RoZW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1MDgzNDAsImV4cCI6MjA5MTA4NDM0MH0.rr6g_BhkoeQZk9CpEDim4qCg0MRqWdrdrJsw9ihmbCE";
+
+const supa = {
+  headers: { "Content-Type": "application/json", "apikey": SUPA_KEY, "Authorization": `Bearer ${SUPA_KEY}` },
+
+  async signUp(email, password) {
+    const r = await fetch(`${SUPA_URL}/auth/v1/signup`, {
+      method:"POST", headers: this.headers,
+      body: JSON.stringify({ email, password })
+    });
+    return r.json();
+  },
+
+  async signIn(email, password) {
+    const r = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=password`, {
+      method:"POST", headers: this.headers,
+      body: JSON.stringify({ email, password })
+    });
+    return r.json();
+  },
+
+  async signOut(token) {
+    await fetch(`${SUPA_URL}/auth/v1/logout`, {
+      method:"POST",
+      headers: { ...this.headers, "Authorization": `Bearer ${token}` }
+    });
+  },
+
+  authHeaders(token) {
+    return { ...this.headers, "Authorization": `Bearer ${token}` };
+  },
+
+  async getSchool(token, userId) {
+    const r = await fetch(`${SUPA_URL}/rest/v1/schools?user_id=eq.${userId}&select=*`, {
+      headers: this.authHeaders(token)
+    });
+    const data = await r.json();
+    return Array.isArray(data) ? data[0] : null;
+  },
+
+  async upsertSchool(token, userId, schoolData) {
+    const existing = await this.getSchool(token, userId);
+    if (existing) {
+      await fetch(`${SUPA_URL}/rest/v1/schools?id=eq.${existing.id}`, {
+        method:"PATCH", headers: { ...this.authHeaders(token), "Prefer": "return=minimal" },
+        body: JSON.stringify(schoolData)
+      });
+      return existing.id;
+    } else {
+      const r = await fetch(`${SUPA_URL}/rest/v1/schools`, {
+        method:"POST", headers: { ...this.authHeaders(token), "Prefer": "return=representation" },
+        body: JSON.stringify({ ...schoolData, user_id: userId })
+      });
+      const data = await r.json();
+      return Array.isArray(data) ? data[0]?.id : data?.id;
+    }
+  },
+
+  async getAssessments(token, userId) {
+    const r = await fetch(`${SUPA_URL}/rest/v1/assessments?user_id=eq.${userId}&select=*&order=updated_at.desc`, {
+      headers: this.authHeaders(token)
+    });
+    const data = await r.json();
+    if (!Array.isArray(data)) return [];
+    return data.map(row => ({ ...row.data, id: row.id, _rowId: row.id }));
+  },
+
+  async upsertAssessment(token, userId, schoolId, assessment) {
+    const { id, _rowId, ...rest } = assessment;
+    const recordId = id || Date.now().toString();
+    await fetch(`${SUPA_URL}/rest/v1/assessments`, {
+      method:"POST",
+      headers: { ...this.authHeaders(token), "Prefer": "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({
+        id: recordId, user_id: userId, school_id: schoolId,
+        data: { ...rest, id: recordId },
+        updated_at: new Date().toISOString()
+      })
+    });
+    return recordId;
+  },
+
+  async deleteAssessment(token, assessmentId) {
+    await fetch(`${SUPA_URL}/rest/v1/assessments?id=eq.${assessmentId}`, {
+      method:"DELETE", headers: this.authHeaders(token)
+    });
+  }
+};
+
+const HIMGS = {
+  img1: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAF8AAABfCAMAAAC5kuvHAAADAFBMVEUAAQAAAgABBAACBQEEBwIFCAQHCQUICwcKDAgMDwsPEQ0RExATFBIVFhQaHBkbHBofIB4gIR8hIyApKygqLCkrLSosLSstLiwxMzAyMzE0NjP/AAD/AAA1NzT/AAf/ABP/ART/BhU7PTo9Pzw+QD0/QD5AQT9BQkBERkP+GRNKS0n/GxT/HB3/Hh7/HiX/ICZWWFVaXFn/MTVdX1xeYF1fYV5iZGFjZWL/PT3/PkRnaGZqbGlsbmv/R0VvcW5xc3B0dnN4end6fHl+gH1/gX6ChIGKjImLjYqOkI3/c3OQko+Rk5CUlpP/eXuVl5T/f33/goD/goadn5yeoJ3+hoefoZ7/h4igop//iIn/iYr/jYukpqP/joylp6T/j5L/kJOnqaapq6j+lJT/lZX/lpb/l5esrqutr6z+m5j/nJn/nZr/naD/nqH9oqK0trP+o6P/pKS2uLX/paX/pqa5u7j9qaa6vLn/qqf/rKn/rK//rbD/rrH9sLH+srL/s7PCxMH/tLTGyMXHycbJy8jKzMnLzsrO0MzQ0s/S1NH/y8rV19T9zsv+z8zY2tb/0M390NP/0c7/0dT61NX/1Nbc3tv81tb919f+2Nn/2drg4t//2tv/29z83dzj5eH93t3+397/4N/m6OX/4uD/4+H95uLq7On+5+P/6OX96Ovr7ur+6ezt7+v/6u3u8O3/7e/87u/w8u/x8/D98PDy9PH/8/T09/P/9PX2+PT99/b4+vf5+/j6/Pn7/fr//fv8//v+//z///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////9qxScWAAABAHRSTlP///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8AU/cHJQAAAAFiS0dEwBNh3/gAAAAEZ0lGZwAAAAp8We1TAAAADGNtUFBKQ21wMDcxMgAAAANIAHO8AAAGF0lEQVRoQ7Wa+2sdRRTH7wUpVeujVutjsYKvquUSX/X91vqsiloVKpY2AW0ImgghWhDfBqOx0iIkQoQW0ou1kSQ2RRuzzL/mmZ1zds7snHlsSPeH/LB39zNnvjtzvmdm0lEtrrJUKwr+tLg6LZ5VpZp+eBb+trja8Es1u6sYONGqgXw+6PLnTUVR9P5uI1ELvjqu8dDAXIseZPNLdbxX4YtioEUDmXwSxzTQQqJcvpo14mAD2R85j1+qY7sM+VWUKHeY5vFV/07DHSsPYw8W8yZBHn/OiLPjAEBfxwbms0ZRBr9URzH60SrmoTYSpfmlmkf8ZwpChuwwgj1YyEhFSX6pTtTimMxTqn3YQD/9DVJ8SGkY/QiDHciWKMGH6HFgHtGBm8tKNNBPSZSKfx7FGXJGS6neoW+QGEUJ/lGctUOe0tjAwGz8G8T4Vb6vrs+tOLVEH+E3iM+DMB+U7aM4hwURSrV/R9VCbzHmBxG++iUojulEjkRBfqlmcGCykcO1hlFEEkWyaYDPxBlxxFlbs22UCudBxA9CfHUMxRlkMf986Plnnn1tYsneopkcdDSZD/neF2fpvsu7+tq8/aA/0UINSHwmzqgVZ/n6il5dr1APSsqmIJE400S+mkFxdL6n6zGL73Yn7f03cB7IH1ngQ77HafUpj2kT5z9pO6DQ0eSqQoofp1UBeHZdwvlP819ilunxISkwM2SY2zj/fadplKgnpIom3+b70UbieoLzf3B/DFtmgw/5PjRr3+Z8Bx+zTJdvzXDQG22TjL+l0TdrmX80fnH4pfoJRw43Q3zjDOPf4Sf9gGVyvmiGNWn5CtvAU00+S3Z9p+eMb8VxzRBZ526xfHf4VA+AZaIfLPAGePzT0Xy/er/l/+jrA3f2oydzy6z5ETM0sLXnLP8vgQ8SjfqWiXyW0kRxNO/Nmn/lshi/ZJnEV+FKgVgf1xno9nMiH25S2VKX74YPZuiXUU3Gt1uoAw+synzBMjU/aIYu5betxN/DTNJ9xrPMik8rw4KboRfi+WuI/25IHn3ftUzgAz4tjn7zVuRv+iTMZ7VpZZkdJs5YopZ8BPmXfR+Lv7bMAb0Q78CnFcxQBLyM/Kt+j/HhN/IDsMyOmpbMUARMIH97YPjgS6AKWeas6qzcaybdvkRM8PNJ5O9MPlq+ZKCP/9tRU9nxK+Q/GudD/MOYKGYUjB/ctih4MSITtpkG9qbipyGq9YfWqAxPjR+12/C/jPJtybUIz1Xjn+qdQKVc476p8Fvjo7Ouqs34rx6mSj86f+G5Fy/qdq+Tk3/dKKW4ueqOyQ+1RG4x7gW6dmpiMpg79dOlGkSTwVUN5U9KEd5KK/Ut+e/MYqgarf0rbo65rQTyv5aIVrrSYo7wZ1+4+8HxYFvWvxbqwljw3y/kSh6w4/B5u92bz4gtQIhjfqnO64cpTHTDgQg/xPl7w2n5gWj9oIOmnRLZ4k9fTf4iTWBe/7Dm3foN96n89bp+Y3wz8e/6p9kBO3J67pZHo/6cEjZjiPVeXZ9sO+sLROO+sfHXrP9pp02Q6GDNv7bJt/spbvVJ+aEOp/4GhZ+Lvr6UGrjnvBO/LUt63paZv34hPxhrarBar5A+aP6UvX7Ro4jWX16y+/Vi04Hd/zX4Nt9730VaP+JMLmC/0L1O3ajxe5q30a16MGtz+LDEQ8usNiSd67u3Di01tSczFLeMpfitZab8QDfFzDAvfu4HKcvkZiiey8jxW8uM+gGrl9vsn1TdTG2OGS1cM8zUBx5jlsm2aBrve2aYz6+qasxFAT8QzLANH55NWaZnhq34zDKHo/uf1gxb8atUgRPtK2H/lhaj8aMeeXzWgZAf+JYpmWHL+LllulVFwAxb80EiskwmUdAM2/OhAaoqRtnbtG+bPgVL6K+ZTcsMm+E64mffwFQVG31+pJlsCQUhbvD5F7dMfUwSMcN16VO9RJZ5pIyZ4br51jLx9BGOdUQ78VrIGD/mHVplmjOXDT7/ZX5ARzqCFtKt7PitZV6I8/cqNNxCg/8fyL+y4693ueLnXc2W8/m4EXXB/n+jimzqodyBiR1pE78eRSvBxZ/8Tf4HyBHiBYZ7SiIAAAAASUVORK5CYII=",
+  img2: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAF8AAABfCAMAAAC5kuvHAAADAFBMVEUAAQAAAgABBAACBQEEBwIFCAQHCQUICwcKDAgLDQoMDwsPEQ0QEg8RExASFBETFBIUFRMVFhQWGBUXGBYYGRcZGxgaHBkbHBocHRsdHxweHx0fIB4gIR8hIyAjJCIkJSMlJyQmKCUnKCYoKScpKygqLCkrLSosLSstLiwuLy0vMS4wMi8xMzAyMzEzNDI0NjP/AAD/AAA1NzQ2ODU3OTY4OTc5Ojg7PTo8Pjs9Pzw+QD0/QD5AQT9BQkBDRUJERkNFR0RGSEVHSUZISUdJSkhKS0lKTEpMTktNT0xOUE3/ICZPUU5QUk9SVFFTVFJUVVNWV1VXWVZaXFlbXVpcXltdX1xeYF1fYV5gYl9iZGFjZWJkZWP/OzxlZmT/PT1mZ2X/Pj7/PkRnaGZoaWdoamdpa2hqbGn+RERrbWr/RkVsbmv/R0Vtb2z/R0v/SExucG1vcW7/Sk39TUxxc3BydHH/T01zdXJ0dnP/UVR1d3R2eHV3eXZ4enf+V1V6fHn/WFb/WVd7fXp8fnt9f3x/gX6DhYKEhoOFh4SGiIWHiYaIioeJi4iMjouNj4yPkY6Qko+Rk5CSlJGTlZKUlpOVl5SWmJWXmZaYmpeam5ibnZmcnpudn5yeoJ3+hoefoZ6gop+ho6CipKGjpaKkpqOlp6SmqKWoqqepq6iqrKmrraqsrquusK2xs6+ytLGztbK0trO1t7S2uLW3uba4ure5u7i6vLm8vru9v7y+wb3Awr7Bw7/CxMHDxcLFx8TGyMXHycbJy8jKzMnLzsrNz8vO0MzP0c7Q0s/R09DS1NHT1dLU1tPV19TW2NXY2tbZ29fa3Nnb3drc3tvd39ze4N3f4d7g4t/h5ODj5eHk5uPl5+Tm6OXn6eb/4+Ho6ufp6+jq7Onr7urt7+vu8O3v8e7w8u/x8/Dy9PH+8fHz9fL/8vL/8/T09/P/9PX89vX2+PT99/b3+fb++Pf4+vf/+fj5+/j/+vn6/Pn7/fr//Pr//fv8//v+//z///////////////94fw2SAAABAHRSTlP///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8AU/cHJQAAAAFiS0dE/DwOo38AAAAEZ0lGZwAAAAp8We1TAAAADGNtUFBKQ21wMDcxMgAAAANIAHO8AAAIE0lEQVRoQ7VaaUxVRxTmJC8vLwiyCrggCirWViXiUm21i5BqLbYV22pJNXYxYDQ2rYKVqlFpK61bixqCiEtFrLtirdoKtSWpYiCpEEjEsohUCKkoj+CP86cz987d5y6PlvnDfffO/c6535w535kZ/NCH5kXvgcfo9eEN9POhsxc7ViWs6vDJgA/4xO+MhISEDPTFgHN8Bu+jAcf4Ajli84Uip/heL0rwxACSn86aQ3yZHPELljkeA4f42EGHlrRXfaTIEb7X62XkbLq7iRlwyJAjfDEwaWx2yB9CwtRJc4BPIofBL+kikF1LZFsOBtkenyQFiRw6dYk1XyiyxSc8M+9Z2CsTwQlFdvhe7FKTI1IuU0T5sm42+F5vFyNng5LXyBdsYFHUZTcE1vjKtFr7QJXVvPhgLRtku5ls579EToeOhg4pimw+wApfGcl1+qRPHq2TZ7LVCFjjM+/XqckR0QhFzECGJUXm+CTUl4kuLtGTI5pQUWROkim+Qs5ahZz2yrKym/elL+hgg2ylB2b4yrTaIJNzcvYgf7fbE5H0i0QRC1MLyTTBJx+sI6f3XCQMmLut6OBXyR5IbtJRZKoHfHyFnFVdYty3pML80yxQOncNdZ8SB1mafaYUcfEVMdzEuO+eDhd7lDi8sxB2iQbkZGcSRTx8DjkT3H9oorw3HbK1FJlIJtd/Kd9nMHJqxgT+pJ9EG2Fpp0iRNr3q+hnxVWLIyKkZEnXLOEdLXDN7tRTxJJPnP4scIoZCa/HENtYa8fGiZ9QjcaJJ6snppMfXiSF5o2dEdNVr7hbDu0eXn/ekimNuIZk6fCM5WAKXd8A5o2snofC4u1oXRQaKtPgGMSSvH4GK8Z9yvvxJ1oAqqBIeWEimBp8rhhWwOZLjPjX85YgGybCZZKrxlemoEkPE+JDAYxz/cQ8EL5Xum0qmCl8hRyOGeA3gfQ5+72pw35Tvm0mmxn8TMXwLojn4bTMhS3ObK5kyvhf/YZWCQQzvDAO8nF9QkH+0mQLeKaLXFa0xkzXwfMlU4RvEsDwl9Vdhgk2Kag930Tb3IWJ3BL2CSHxhsYDfmZO0g0URRzIZPhFDAznV4UED4Wvq8JCFnXFAWyoFGi5cTsEPEumvm2HuMMhjX2KUTBGfK4Znob0nB/IR6wZ8jjkUM1RIExVuen0BtwwmPx7FT7iBc9n4EBi9ZAr4JCFLVZpSKfRMDCGP5nuuY33gx/j3LJDD5RSBz+zBrBjyfF5ABeIK6oUI9EAnmRTfmO9p3w8hnP6JDfy56cVQcnHlGCEf21tJ0qw/9Btiw8iV2DAH9pKb6RBayRhSqgpRMgm+UQyFvgH+Y+mf5hSY+jY8T7yk7f4UV4l4VT4zqHiFa+h+ep09En5g+HrJ9KO6pq7vJT/Qk9qMF9bn1uDvbxA+AsRY/wIgjmb9J+kBEAwhhU1Ykr29pbMZmFWDZPrxySEQT40vjAEXQNo9/DOJWAgiEtYzlVyQSXspkPyNPIx4Ioh0cWd9Bxdlv5TCi0qmn7xslsRQ6ngtJmRW8cO6rRGwvgqrXoZkMohniD0Yi7mQCNOKsLNkLCSX9lQtHx78Hh0bhSJFMv0ec8mhXf+6LahH/b5g98K6I4ArBuFZGJU2YFRT9JpqqMe98fBmGSULG6pVtYWGosd+B9i69q7qA3WXj7a5XdGAeR52vy70+1rYFwEzBHXhtrtsnXzAT7N4M+veujoY8DgU3KMdWvOgvNYFM9SUa15ULwEJ/5I6s2KEb6MYqnu3QnxmcXH2M5CLpbDb1HdNyULjx2yNokIoCIZxiLdTaGZIIaIYDjCvzsyCnIWE+FGSg1QM6t+r3z/QNWe765028qCKKm7jJE/plkhYfEOsT8zIoSNtPn+x8ds135QjVmdGuVZWYIkHpp4RkYqGAXxU3V0QD8lk2jYczN76o2zCOH+FRxyKrnvAAxCV6IbPGvHwEJh4LBZi89qxKApmN+z2wCu1eCkWBo8nnQBelwNURQ4FFvOnvEZXFhPoTrzVhvnT41Z3txWHwrSrpN/hcSQ1u8bRaqJ7YwgsrsETk0enV+K9nVAsuKnOn2IpZJ7/YcGWMOGlXdGQJpW31/N3XmFcNO4eAwsaBL6eLRUTtFn+p08M+lVMPptmzc2QVqeZnjLXbRfCIuj8fRdgkqDMnCWfhf7WJcMeMryeHBnQcFHpn07ujQ4rZOQoS1apqwpf2h9U6gf3IsTT0GmOjyn+JFfDeUYOg/9EtRq3rH+eexqfxCVxgly2eIgQf9ZFolhLjuKRZf12FUIgtMzCfcRkCIeXiAeO6jfDZsyVpZlKCci3k78ol8xrTf2pXs3r6n/OZpKl+/JDJ/WzoPiWqzUTW+r6X7fCsF+/2Puv2fLTbXXo8CmRxv02OxPO118CkrKZagcsPpc8IvWCoen9p8nOkWRKSFbkkD5GfJVD+pKF458ihtJyWduJh+9MMhmOWgwd8UM62UsmQ+rb/olpyav3r6/7P+ooMtncY5HDdkF5kSP24I4vpYgnmVr/jWLolH/aj7tkUgNwxNAXfJ5kat//b/ufwic43L/l+C3dMuNfS5H1/rPVFrcVPv2E/tw/V0dRf+3/251f2J2l2vBDKOrX8xeOZFqIoU/xLyd4rR7Y5Hu9CXt+9JL5f5/fqZNdv5w/aiRTdX5qd/RlmT/1POrOf/li2KfxFV4ynl9b5Bz1IwfjKxnoz/N3tR70y/8PqKLI+eG+hT5y6GWSaX1e14f5Jb/Sz/9/Iqwyyf/P+NT+BVainArJZLV8AAAAAElFTkSuQmCC",
+  img3: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAF8AAABfCAMAAAC5kuvHAAADAFBMVEUAAQAAAgABBAACBQEEBwIFCAQHCQUICwcKDAgLDQoMDwsOEAwQEQ4RExASFBETFBIUFRMVFhQWGBUYGRcZGxgaHBkbHBocHRsdHxwfIB4gIR8hIyAiJCEjJCIkJSMlJyQqLCksLSstLiwuLy0vMS4yMzH/AAD/AAA1NzT/AAf/ABM3OTb/ARQ4OTc5Ojg6Ozn/BhU7PTo9Pjw/QD5BQkBBQ0FDRUJERkP+GRNISkdKS0n/GxT/HB1MTkv/Hh7/HiVPUE7/ICZQUk9RU1BSVFFTVFJUVVNVVlRWV1VZW1haXFlbXVr/MTVcXltfYV5iZGFjZWL/PT1lZ2T/PkRoamf/R0Vtb2xucG1vcW5xc3B0dXJ1d3R3eXZ4end5e3h6fHl9f3x+gH1/gX6Agn+Bg4CChIGDhYKFh4SHiYaJi4iKjImLjYqMjouNj4yOkI3/c3ORk5CSlJGUlpP/eXuVl5SXmZaYmpf/gH6bnZn/goD/goacnpudn5yeoJ3+hoefoZ7/h4igop//iImho6CjpaL/jYv/joylp6T/j5KmqKX/kJOoqqepq6j+lJSqrKn/lZX/lparrar/l5esrqutr6z+m5ivsa7/nJn/nZr/naD/nqGztbL9oqL+o6P/pKS3ubb/pqa5u7j9qab/qqe7vbq8vrv/rKn/rK//rbD/rrG+wb39sLHAwr7+srLBw7//s7PCxMH/tLTDxcLExsPGyMXHycbIy8fKzMnLzsrNz8vP0c7R1NDT1dLU1tP/y8rV19TW2NX9zsv+z8zY2tb90NPZ29f/0c7a3Nn61NX/1Nbc3tv81tb919fe4N3+2Nn/2drg4t7/2tv/29zh5OD83dzj5eH93t3k5uP+397l5+T/4N/m6OX/4uDn6eb/4+Ho6uf85eHp6+j95uL+5+Pr7er/6OX96Ov+6ezt7+v/6u3u8O3v8e7/7e/87u/w8u/x8/D98PDy9PHz9fL/8/T09/P2+PT99/b3+fb4+vf5+/j6/Pn7/fr//fv8//v+//z///8MrRmFAAABAHRSTlP///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8AU/cHJQAAAAFiS0dE/6UH8sUAAAAEZ0lGZwAAAAp8We1TAAAADGNtUFBKQ21wMDcxMgAAAANIAHO8AAAIHUlEQVRoQ7Waf2wURRTHu8nl0kDDbwQUUaBcQCKEQlQkNBas5YegIio/VCoKVaBYsSixIhAkQBCJoUCIUkJASZQgQg9pmpRIaUKa8COR/kNDoGCw0EAFrKV0M/HNzJvZ2dnZvd0G5o/e3t3OZ96+efO+b+aaRiI02yZ3CfyJ0NIi3EtscuL1s/A3QovCt8nZcYmcC5EGCM8Hv/z9VCKRyP4niosi8MkpiocBzkd4gtB8m5zKZvhEIifCACH5wjl8gAguCssnZ7hzcIDQkxyOD4H5HCd/ii4KG6bh+OQqWl9mb8MnuBluEYThQ9xz/LANAP0cB7gSKopC8ME54zhzF7N5SxQXpebb5AI65ycCJkN22IlPcD1EKkrJl3hwDs88NvkKB7iWeg5S8W3yBzpnpwLbENpFKfhgPeL3U8N5g9cfcICrqSY5mG+Tyxg5W1wgm6wexlfy9RQDpLD/BE7tFm754ZVLl+9rY5frcA7OBs9BEJ/le9Z+YZDC3ukxK5bes9DlouB14M+H4MNVO4xZf26oJdqYejrCOnTRzSA9COATl3MO95B4y+pfQUdcHSKKfPk2OYMpjUVOdT8Fb1kDTqtRFJBNffiKc3ZSUtsrLrxlTYdZtgmugwA98OOTkxg5m9nUVmt4y0qyz8VK9lU0M98mJ93LaraHn8UXGuYiX8k08RXnlOHyyfDwLYghOoLIpj5VhZEvxZDme9puePEWrALWvgiUTAPfyfd7Rc45auBPY3RwESpajlEyTfYLMQQ8tgMG/kT5rZDM6/IT58LDd4sh3lhh4M9wIOiinMveZKfznUqhTLGm0cBfqnzvL5kaH/K9umolwsAvl18qYeqRTDffEcPN7kcd4R1AdbaUzBxdcFx8sxhS0EIPf5Q2mT6SqfIdMYR8795FHPfwl7n4imRec3VV+I5z3GLIFtggfYA6zX4pmTkuyVTtF/l+mzeO29/V+GNue28ySabku8TQu8U6pmUgNTr5SNBnFwqOogfIV1LaNnNFkMsfIIu/9DlnWKuOZIKL0ETBd4uhoXNjFwb+5Gn2IpKbfiNKZrbMRZwPYuhUCj77zyQDFy+jf/MMBnAXicJLuIjydTE0d74Vp+SKml6WFTNMrpgETTIZX+wME1wMza2B4nvVNY+yrHhTwH1uyQQ+4L01phfAJHguOf0E8O/48nXJTDOIoaFz+/3yZyl/9o32F+FlVQsvEk3NLZlpMLVYKQgx9HZqOji/P66vIrKEXb1Qcuxf3yEUyUyTmx8phnq3o7My2dSyliQVMX7VdegcXqPozSWZaXdf5otutY819WSChFvWcFI/0nnb+Wc/H33MoW/8l0aqcHIN9jcn3+tm5ZYeHC2R3x2qyBdvYrH1DSV9MwuTWjSB/TswUZwhED94bOENzrWj0hlrQn3Bkwg9PLagGC/T99RO70Ov41kHtMcQIQqLDOZXluGimMK7S9HRljWHtBbyKUguqP0MXoq7d45N2v2ofKyjygAyfrLpFpzFv9jfKnssKGl5pmEtcwZZPrP8SN/RG2tJvdWpzzLSTi4pFXX8vhhASRGsJuX5RxSzuA1in7Vy52BbQsiI47U1lbWwjTn0VwvZPtXZbsAtpc4DiBR3nn3E84N0ESvGeWt1ghIAGZkbcUnt6VdAyGmxHnD4r7GTTTZjuYi7GpE/RYpwlNfNh2ncPb+SUQrGtzWoj0avOd8gMVK/tJ2ibj8w8iZvRSt/f0Tnr8VvfPI/HfkK7nR3oItaZfggbFpLO1I26XiL8VX9En426O+vWJysdA+QPqUF8U1rtj/uHiG+j/Up89Vf1rMKE90O5BQpkHRr65Jz5HbxDfhuyktN1gB1gB7fsx6B9QM1AA9iYL/Lo2i9hMSK0t/+sZHcmXgJPl51sb3mGyW6utPlpR4ZiBCEV3f9dh6fQLhoBQ7QOatyX2NN78kf/UlIy/g1cyruzXMKri7VauRkX3WdCmn1ZxVWz/ykipBFfIDFpPnb0lwweRapf5V+MIlUluQPZN8NgTGhibjXdjF6/Y9PIF1En2BwJcl/zGKzvYjU8bQwstfzxQ10UzyS7vPAObisAutnZQ7okQabhOUDF1ZkxjuhoxZPLnlGTsqm5sqeQyDzODknO0X9T+8VelAmZgkEXba8sVPnOe+6fYmZOfT+hQ4gDiNFsbJY4Y+tTr6jvJ3NbXDyvRI5/NK0f8SVnIDzQtaWOsQFZPgY591b/HtUKzjL8rbA/S87kITmuGRFa1yu6tiHbGalGIbe/zqSiXrQLjU3fj9Pmr9Sd46pcDWfD0g92IsrWe6/6t4X/D0Ur4qhsS428VXJFGEqDlDWlPPEkHGEO0fUy34HNGY+9NUks+1NbnfudPbSE0srtxiGm1/+3NJFu9BFcxn42CT6t9tFfpMmhuH5rKrGXPQbRtFMSi6aD38G3eImGPZb+hC+/oEbtf1kK2S2jNrBlkWPJ2nziGEU+1XJFFXFDCuDDLEmsELCJIaR+CxVYG0qXDStKxnEzpXMYhiRD7cLPcDD+eZ88sE9TnkA58+qZOKu+B5hlaCPGEa33yZCMoWLXJGjiWF0PtUD1GQhmRTiI4Yd4EMXXTL9xbBDfOf3I5aLgsSwQ3xFMvmB5QP+/UuVTKoHAWLYMftpL1H87reDxLDDfGcLhb8+mg+DO8yHjmKXyX+WesC//yp6wPCw+THYavooKD+77ndc9DB+f2dDoR7A/w+Eb6Htl6dc1DlhvWOu3/ysYwdRD+3/N9ioVa+F/WEfjQzvH56Y76LYh52B/wGnlRq/hZz/wwAAAABJRU5ErkJggg==",
+  img4: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAF8AAABfCAMAAAC5kuvHAAADAFBMVEUAAQAAAgABBAACBQEEBwIFCAQHCQUICwcKDAgLDQoMDwsOEAwPEQ0QEg8RExASFBETFBIUFRMVFhQWGBUXGBYYGRcaHBkbHBocHRsdHxweHx0fIB4gIR8hIyAiJCEjJCIkJSMlJyQmKCUnKCYoKScsLSsuLy0vMS4wMi8xMzAyMzEzNDI0NjP/AAD/AAA1NzT/AAc2ODX/ABM3OTb/ARQ5Ojj/BhU7PTo9Pzw+QD1AQj9BQ0FDRUJERkNGSEVHSUZISUf+GRNKS0n/GxT/HB1MTkv/Hh7/HiVOUE3/ICZQUk9RU1BTVFJUVVNWV1VWWFVXWVZZW1n/MTVcXltdX1xeYF1fYV5gYl9hY2BiZGH/PT1lZ2T/PkRoamdqbGlsbmv/R0Vtb2xvcW5xc3BydHFzdXJ0dnN3eXZ4end5e3h6fHl9f3x+gH2Bg4CEhoOFh4SGiIWIioeJi4iKjImNj4yPkY7/c3ORk5CSlJGTlZL/eXuVl5SWmJWZm5j/gH6bnZn/goD/goacnpv+hoefoZ7/h4igop//iImipKH/jYukpqP/joz/j5KmqKX/kJOnqaaoqqepq6j+lJSqrKn/lZX/lparrar/l5esrqutr6yusK3+m5j/nJmwsq//nZr/naD/nqGytLH9oqL+o6O1t7T/pKS2uLX/pqa4urf9qaa6vLn/qqe7vbr/rKn/rK+9v7z/rbD/rrH9sLH+srL/s7PCxMH/tLTFx8TGyMXHycbIysfLzcrNz8vP0c7Q0s/S1NHT1dL/y8rV19T9zsv+z8zY2tb90NP/0c7a3Nn61NXb3dr/1Nb81tbd39z919fe4N3+2Nnf4d7/2drg4t//2tv/29zh5OD83dzj5eH93t3+397l5+T/4N/m6OX/4uDn6eb/4+Ho6uf85eHp6+j95uLq7On+5+P/6OX96Ov+6ezt7+v/6u3v8e7/7e/87u/w8u/98PDy9PHz9fL/8/T09/P2+PT99/b3+fb4+vf5+/j6/Pn7/fr//fv8//v+//z///8f8Qw+AAABAHRSTlP///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8AU/cHJQAAAAFiS0dE/6UH8sUAAAAEZ0lGZwAAAAp8We1TAAAADGNtUFBKQ21wMDcxMgAAAANIAHO8AAAIA0lEQVRoQ7Waa2wVRRTHO0nT3Gh5CVQEEUVBBG5ECREarAqhsajYWEUR8QGKiCAqxRcoEcGIwUiRNCAQolhjACExoiANtAgkkDQFPkA/0DTyChaCUqrQujnxzMyZx+7O3rvbwCTd9s7d+c3ZMzPnf2a2OZCgeB5cArwkKDkJ7gUP9j53BK8JShK+B0fGpkuOJ+ogPh/98ue96XS6+O8kLkrAhwMcjx0cS/AEsfkeHCgW+HS6JEEHMfnKObKDBC6Ky4dD0jnUQexBjsfHifmQJH9ALoo7TePx4QxZX+WtoSe4EG8RxOHjvJf4YcsQ+hF1cCrWLIrBR+eMlcwNwuaVSVyUne/BcXLOj4AmY3RYT09wLkYoysrXeHSOB61ovwefUAdns49BNr4Hv5Nz1nPYomqBXBbbRVn4aD3ht3DDoaxMPAB8Sx2cyTbImfkenKCZs1KCRrMr/JcHS4bJlXwuSwdZ7N9LQ7tSevq/+9i75POlNAZHMo9BJr6I96L8JJwCcHEoG9kmH0C7KPM6iObj5KNVO4ycA3ByAOu6UxrswVJy0YVMepCBDwHnILS+H2MLtEOWxJhFkXwPDlFIEzOnTbilujtj48VfPhdliKYRfMs566XrJ/DL5jzGul4GaG6RPdA6yKAHUXzYTzNnhbT2Ss8peF3MsDQAlE8kJ6mVHKlobr4H+33LCi1PpWqgfTLnrwJ4+rrd5CKKRZGS6eJbzqlSy+dtxp6Hy304fxZAIStXg6CiaURW4eRrMeTxXpQ2tLxn3XaOZ6VQl2KlOAqyfJxRMh18E+83iVnSehR/HkFw2QjBH9k4kLEh5/UsIkUrcUqmy34lhogXZWg7XHxQoEVJ5eKl10llP4CSzHOmSv8V4vvFUNxX8Aq0jDF88VfnJjhPC0G7qOREONgF+SZTqNI2DGJfwmMBfpcmKK/Ud0RLZoCP8d5etRJQyNjnLwh+Xqnqpk9zY+dxxDeSWRKSTD/fiOEK61HHa9vz9s2nv/vNTrE+2n4tmSVBwfHxA2Komk/S/B418IBxVIE9nhGSafONGKp4D3AQGTM4shu/DD4NXxv+CMO39OCsb5AtvnGOjvcAnxU1wgKOLLwbL9MAdnXRHcyA0zyfUAuBJLPEJ5m2/Srer7Geu4b1W7iNE2e+hTO/CeBwf/wwR/Sxs230d7aLXJKp+WExFE1PMpbbg8O21jP2DFa0jmJsKvCakQeHsKd8LtpAgmPpAfGtkLbG57/L5I28utbhbDmnvc761sNwrO6NP/m2/UYy0UW0C1R8hxjKpsS/sQEWsfKKeXPfn83mAkxXg4CxyS4kmcU6Fkk+imEgU9CNEPR4JzS2CabnisiTy26dDxsV/wv/A+isQrmI88NiaDVC0MQ/7srt/mnKTEzW+xv8lLoda2b77Q9JpuCrnWGaxNBug4p7G05T/IWl0x0Db+HPgJGCFdbwtfySn4+f/JKJfMQHxNBuU4BLqwamiAmzbl9D4+Hd5V35h/vbYR7+mhrgW7FIaHKOSwztNvegxyvKucUfqurWCbyDH+BNvM4J2e/pDQiXzBwcWsoUtBj6mjyJkCL0TpetVjWfPje0TMPruhAfKyzJzNGbHymGofKeHNbcjb5vpmJVOdccksnALDKSmXPpCbnolrgMwbrfJH9Su+/7RkwUB+Uz1t/dyntHQl/8NwdqaXAj7G/gs5ClNgdAr8pu33Dw0QtrKVAcApw/dGzhmpy8tYj+PYOc78WETYk0K3KK4iLD8dVpuE6mfA1+5aRRQUZdZ85/VEu8+V7Pn+ILWCnmv9rfbnEOcRmCJgT5zd34lN0WMt0SGjn/xR0qmaVtkL/VlV6MjQmCGvkiQ7kJFxXijomvZHzQLqJk3N8Kl9PNQc52DEADwnAPVlC6SLsaFT9ViDDKaxrj6s3fE2Dx2OBfEtLQoMRo/QpvhjRxV3gitmBOlB+I/fz+iPjPez5FO921oWXcjGpVgNJrldXY5fh/As9k65eCOPT359As4uGtSCfkSN3DJ89XfjyaWBWpv+LWWgp0a4Pj1nIn8kbv09WV1+NnlR2amzPmD9xoOogx+13V9igXlW4zxa4OqsfxT71N6iNq7SMDyz5//naMniDkot1SHQdPfrlUZCvspkbfQ5qZU3zGdyoUyD9rKXuWJ1VW2cHTN1OKjLPoJjXvA7uYYP5PTxB20V8LhSyK0nd1YOqgc2hZZcyfrTHQRxpo3o6KSiyrlz8s6bkTV63iFZUV9dJ2E3OKs+T//F6lB2b/YqXkPicxrcix9y+8A3UYqZMVs7/w49li8r1KSY4HR03FT389reQ0nheKko1PaoVnWbH4Rg/EgSTAFzNnOctr1eJ7JYax979GMp16EDDSOMeVfrjPB7QebMpyfGeLoQtP+hX0m3GRSw/03UExjOd/eVdGydQgvxjG51uSuSHSRSExjM8XWTXFol/ciaNDDJPw8V7XftJGhMQwEd+STFdW4RLDRHwRKig3DbnILYYJ+Xi70gNxOO8rV+H82ZZM/644QgyT2++BkkzLRZFimJzP9YA02ZbMCDHsAB+bBCUzWgw7xDfvj0QsyiSGHeJbkikPLK/y+y9bMrkeZBDDjtnPW6nkd4uXSQw7zDd6QG8f3YfBHeZjQ7XLlK+lrvL7X2sLJfC4+XHY6qpyv19w3GlcdC3ev4sOSQ/w/wfil9j261Mu7py43nHnb1HWiYOoa/b/G6LX2mfjvtgnI+P7BxugWy65xT5yQP4HuabfrSaGH4oAAAAASUVORK5CYII=",
+  img5: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAF8AAABfCAMAAAC5kuvHAAADAFBMVEUAAQAAAgABBAADBQEFCAQHCQUICwcKDAgLDQoMDwsPEQ4RExAUFRMWGBUXGBYZGxgfIB4gIR8iJCEjJSIlJyQnKCYpKygsLisuLy0vMS4wMi8xMzAyNDH/AAD/AAA1NzT/AAc2ODX/ABP/ARQ4OTc5Ojj/BhU9Pjw+QD0/QT5BQkBERkNHSEZISUf+GRNJS0j/GxRMTkv/Hh7/HiVNT0z/ICZRU1BSVFFTVFJUVVNWWFVXWVZaW1lbXVr/MTVcXltdX1xeYF1fYV5hY2BiZGFlZmT/PT3/PkRnaGZoamdpa2hqbGlrbWr/R0VucG1ydHF1d3R2eHV3eXZ5e3h6fHl9f3x+gH1/gX6Bg4CChIGDhYKGiIWHiYaIioeMjYqNj4yOkI2PkY7/c3OQko+SlJGUlpP/eXuVl5SWmJWXmZaZm5j/gH6bnZn/goD/goacnpudn5yeoJ3+hoefoZ7/h4j/iImho6CipKGjpaL/jYukpqP/joylp6T/j5KmqKX/kJOnqaapq6j+lJSqrKn/lZX/lparrar/l5esrqutr6yusK3+m5j/nJmwsq7/nZr/naCxs6//nqGytLGztbL9oqK0trP+o6O1t7T/pKS2uLW3ubb/pqa4ure5u7i6vLn+qqe7vbr/rKm9v7z/rbD/rrG+wb39sLHAwr7+srLBw7//s7PCxMH/tLTDxcLExsPFx8TGyMXHycbIysfJy8jKzMnMzsvO0MzP0c7Q0s/S1NHT1dLU1tP/y8rV19TW2NX9zsv+z8zY2tb90NPZ29f/0c7a3Nn61NXb3dr/1Nbc3tv81tbd39z919fe4N3+2Nn/2drg4t7/2tv/29zh5OD83dzj5eH93t3k5uP+397l5+T/4N/m6OX/4uDn6eb/4+Ho6uf85eHp6+j95uLq7On+5+P/6OX96Ovr7ur+6ezt7+v/6u3u8O3v8e7/7e/87u/w8u/x8/D98PDz9fL/8/T09/P2+PT99/b3+fb4+vf5+/j6/Pn7/fr//fv8//v+//z////BdeDHAAABAHRSTlP///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8AU/cHJQAAAAFiS0dE/6UH8sUAAAAEZ0lGZwAAAAp8We1TAAAADGNtUFBKQ21wMDcxMgAAAANIAHO8AAAII0lEQVRoQ7VabWwURRju5tIQQVERqVIvBYMREQUbKl8ioEUFKgVaKMpnpUhPiYAQvlIIBUJogZSAQiG0YAWbiiBQerGlFymbkFyaA5Jyf2gaKBAQaOhZepa720ycmZ3Znb2d/Wpgfty1u7PP+84z77zPO7OXABw0SQKPAfxw0BIc9AUSuPD5FfjpoDnBl8CV4e60644M2MeHvPzzptvtTv3XCUUO8MElBA8NXHMwAtv4EriUiuHd7jQHBmziU3JkAw4ososPLsvkEAO2J9kePgzM92XkbwlFdsPUHj64Q7wvlXaSETyytwjs4MO4l+EHbISg3xMDt2xFkQ18SM5wGXM/9nmbE4qs8SVwnZDzC4Auw+xQQkbwwEYqssRX4CE5cuaRwI/EwF3rObDCl8DfhJwSBmyjbYos8KH3BP4Yclxu8PsnYuCO1SSb40vgJomcbRogCaweIK/kBxYGLPy/QKZ2m47p9WQOrpjPgRk+zve4/aaSo6PIfB0Y48PgI6t2gJYcamE9oeiRmR6Y4ANjcmQTq21EkSG+BC6TlMZEDss1E0Um2dQAnyGnRBchV5soRWQdmOiBET64SCJniz4+3vswQi/SlWyoaHx8CVwkkfNrfOQA0CmsUBcayUWGksnDZ8gp5SyfRT0blDFJSjY1qCq4+IoYonyva32GaC79YCqZHHw13x/RkwNAtbCGwYdRRBQtjSuZPP+pGEJ4fevKFJSLFfJfVDIfcLrr8LViGPdEe21rv5RJ9GJe3xvyn4SitJv62YrHVyuFUr03kcEv5o91ieSGZ9ht2sVYMuPwYb43WbUtQo/kzKRICMOeHUzhVclM00mmFl8Vwy3cvL6kcHDKvPZBXRC+OjmoDlCRzLR4wdHg88WQ4Sm6/evEhjGn4ZXK0Sr8edTDQDJZfFUMdfme2pg/8fUT0+avAMHxZGrhDX9KlJXMu5qRM/gqObx8jy1El7qys6L9Zt0bhya5fX4ZAN6RL7nK4T+KZKZpJJP1n+b7nZw4li8FMoUDO8DhsmkI/njymBYAPMIoV6F8lyeZCr6JGKrmGl8duKcFhOZAXJDT9+QT+BWqCp+tRT1gFO0ngsPoAcFnUtpOk4rgoGt5IYjk1wHQNHRsNBY3TglQyYQUkWKG4luKIcKK5fT2gNiG0yLwpB8F4QwvNRDcO11edUQyU5VcJONDMTSqFDQ+vjOoFWTPnLB3ZBGkRhw91IfuerOThszYjhYdRzIRvqkYUvzifoLQy5ULZrmEMdM7wjvQIgCd7WWTkyZs7cSdItCmRNcBlUyMT3eGbo4YyvjRKQJur23dkZtZIW6fszB0/9ShTQtnrwtg6EBVwbyJ03FXrWRCfAivrzFZWkJtIE+GT5pRHPTWfXfYf35T3mZvQzPqVbcqY2D/YenZ+eVI1phchDU5wUIM4SPBjuJOjN7HszIs+qoqg8XrqmIgFomIa6a8PSh98fE21hutZCbAqSWVAlcMQSAUqbldkOjqAQ2EOx62iwFRbAk21p5YsGzRqj/vaaaf/sNIZoKy+eGKIYyOwsKyM6GK8nNLemaEo+BGMOATm4NXAwtemcIkUO0AGMlMePyxvOhWx3mye+7CpSsLihdPKmvq6vI/BCBrE+Q6nVQ+Tz5ChK3leo9m4RsZ9Mv/EkA9mVyd/21o+YxL7CUGWn5OyRshJK71TRbe/SsUethytXFFbvpbH/hqfWJjoNEvig0+peRCs7qLJIrLAMYPObbQBWfFiByvt66gOtLk24fn19UXfpRvnrvgIJHIrlBrsLHBV1fr9dagXEQbDVGYh+D8KmW4UkxFfEV5nlUbymEa6yw7MGd2fvUhOT4FYeSp0Nnxz7tcvYfOPBrl0qPET+ojeB/HP93fkkrZl3sURna4udlbuDS782S5eON+ZVYiHsGn/qKC/Od6CsnLR708lYfPpAg5/rEPtJhltkH7dp847Qchj7+yIVJTDkDZpIFvjCuKxbyFnj1TNy9rA+FW/uzSFHcN35bzg0KRWoyH5QnzbI2AokQBSmykowNzfH5xXsMX5wwiRwJbSLlIdjU0f9IUwSjvmWkZsaZ7oHPRV55PWLjbOVlNUAE4jSMxin7pN0N1fWZCjODkPfFIoeNr8uGC4DWD/I8oukV2ursU/ULbFLF/jR4nBprbue6r+kVBOPr7O1M1H3rBb8C07jJ0sdRQf3HvepLodqnPHsAp2GYzrR+Q0+QghrvftbLBHhkwfbX12zUyApYiK2B8X42c1DuaU6G4+rOeVM/ySZWTRuM+bhcTX/+TETikCJJDlpVp/czMgf5Iw3gwas5Jtaj/kQGqB5z9i6EJ2/sXZIAeRhoWKzozar7X3eLtH8lKdsPzQluNqBU8y9I3Dr6qB/hA0rwxYmh7/6tKpv5YTG+NEUN7/rN6cMRiAKwYcofK45+VTMOdGFm19KDS6ICGjw8f5kgmZ/haMbTJj5xP6OHefkOKdGJoHx9X1SQX/cGPIv5+K96EIT+wo9V+UieGTvxnJVN/xIeGpBdDR/g4VZDaVEcRXwwd4sPuVA/Yw3kZ5SmcP7OSqd0VG4ihc/8lQCWTochQDJ3jIz0gmsxKpoEYdgMfPhIvmcZi2C189f0RzkVmYtgtfEYy5QPLp/z+i5VMpAcmYtg9/9FTtPg9JpmJYbfxVckkbx/5h8HdxocP0l2m/FrqKb//ZfQAw8PND8dX3iWz/Kzpr1L0LN6/Y1NED+DvB+w32/4rp1yIHLvs0P2vPX/wQdQz+/0G9qH+M7sv9onL9vmBD0BaHluXjBoy/gckQkfTN6w6ggAAAABJRU5ErkJggg==",
+  img6: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAF8AAABfCAMAAAC5kuvHAAADAFBMVEUAAQAAAgACBQEEBwIFCAQHCQUICwcKDAgMDgoOEAwPEQ4RExASFBETFBIUFRMVFhQWGBUXGBYZGxkbHBocHRsfIB4iIyEjJCIlJyQnKCYoKScpKygqLCkrLSosLSstLiwuLy0wMi8xMzAyNDE0NjP/AAD/AAA1NzT/AAc2ODX/ABM3OTb/ARQ4OTc5Ojg6Ozn/BhU7PTo8Pjw+QD0/QD5AQT9BQkBBQ0FFR0RHSUf+GRNJSkj/GxRKTEn/Hh7/HiVOUE3/ICZPUU5TVFJUVVNVVlRWV1VXWFZZW1haXFr/MTVcXltdX11fYV5hY2BiZGFjZWJlZmT/PT1maGX/PkRpa2hqbGlrbWpsbmv/R0Vub21vcW5yc3FzdXJ0dnN1d3R4eXd6fHl8fnt9f3x/gX6Bg4CChIGDhYKEhoOGiIWHiYaIioeJi4iKjImLjYqMjouNj4yPkY7/c3OQko+Rk5CTlZKUlpP/eXuWmJWZm5j/gH7/goD/goacnpv+hof/h4j/iImho6CjpaL/jYukpqP/joylp6T/j5KmqKX/kJOnqaaoqqepq6j+lJSqrKn/lZX/lparrar/l5esrqutr6yusK3+m5j/nJn/nZr/naCxs6//nqGytLGztbL9oqL+o6O1t7T/pKS2uLW3ubb/pqa4ure5u7i6vLn+qqe8vrv/rKm9v7z/rbD/rrG+wb39sLHAwr7+srL/s7P/tLTDxcLExsPFx8TGyMXHycbIysfKzMnLzsrO0MzP0c7S1NHT1dLU1tP/y8rW2NX9zsv+z8zY2tb90NP/0c7a3dn61NX/1Nbc3tv81tbd39z919fe4N3+2Nnf4d7/2dr/2tvh4+D/29z83dzj5eH93t3+397/4N/m6OX/4uDn6eb/4+Ho6uf85eHp6+j95uL+5+Pr7er/6OX96Ov+6ezt7+v/6u3u8O3v8e7/7e/87u/w8u/x8/D98PDy9PHz9fL/8/T09/P2+PT99/b3+fb4+vf5+/j6/Pn7/fr//fv8//v+//z///+o5BdtAAABAHRSTlP///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8AU/cHJQAAAAFiS0dE/6UH8sUAAAAEZ0lGZwAAAAp8We1TAAAADGNtUFBKQ21wMDcxMgAAAANIAHO8AAAHtklEQVRoQ7Vaa0wVRxRmQ26sD2rVKvhCwXuD1tiGoOamKIGCYiSUWqpSlfoAq1ittlpam1bjI9r4jPEViFWRVG2ttmmhUnsjkorBXz5+eBONwUdjrxLdgli5uJl0dmdmd3Z3ZneW6vy4ymX2O2e+OXO+c2aJAR6GooDHAH54GDEe5gIFnH/vKvz0MLzgK+DqhEDWdU8GxPEhL3+/FggEMv7xQpEHfHBRhYcGrnlYgTC+Ai5maPCBQJYHA4L4hBxkwANFovjgMiIHGxDeZDF8GJhvIuTPMUWiYSqGD+5i76uUfXgFD8UOgQg+jHsEP3IzBP0SG7gjFEUC+JCcCQjzkObzTi8UueMr4Dom5wcAXYbZoQKv4L5AKnLF1+EhOSjzKGANNnDPfQ/c8BXwJyanggLbLEyRCz70HsOfVB1HA/57EBu467bJzvgKuIUjZ6cJSAFrR6KTfN/FgIv/5/HW7rQxvQHvwVXnPXDC1/K9Nn4yyLFR5HwO+Pgw+PCpHWkmh1jYgCl66KQHDviATw4ysVYgirj4CriMUxoVOTTXVBQ5ZFMOPkVOBTdCFIDPgYMe8PDBBRw52x3jg5xkrqKx8RVwAUfOj9bIsVCEcxFXMln4FDlVLsdH0bMpp6pg4utiqOZ7t/GVo2Qy8I18f9yJHP2gYUXLYkomy38ihhBeaBDJvM+YbcM3iyF5oj0cOlpeVHwsCnb5E0Znz/n6xNmbz3Q4TFHWLftuWfGNSqEKPl6nYjTtKclM6p8ULCwvH7Uu3HfHlcYTm0ryJ44ZnbfilAxAJZzCl0wLPsz39Kn9JDg7xSf1y15eK3dEoa3KydVJmtfPOqNPLm2alRL7cmKQkswsm2Sa8Q0x3K4t9bBvyiptDXB0yLebZsx/mrCkLtR46UakrVP7tmnW2/BTl8wsq+CY8G1ieDoTgJbGn3eUL5yRG/THDymIgLP5SX18veL9wZyC4iWrd9fMLkPmOZJJ4xtiSPJ908A+3bt180lwjJixvqklCoGibY/CB+YHu6tfxsb6pAMqOpXs7pk2mcI3yNHzfcQv9egbH5y/N2wPvSc1q/KT+/eKrSUHAUtmlkkyaf9Jvt+ng0WGLq9lQBvG5DppF2iFrC3sAIAlmTo+UwzPSOu5J6x0Jdglg6NSLqiZDNLKVVYOYcGh9ADjUyltH8XfKvg0b9SP+E3qgPhTQCgZDAlpm0AkE1KEixmCzxbDSmkpFz8SrIytB+2p1SB7wTf9z6F5WDIz9FyE8KEYMiuFxtJWLr78+pzdaXI0eAr4N/ZAm8yQTBWfJYaXpqvn53RONPq0c8T3TCNXfNv8j2RpcSShJIVMsEmmhk86w4Ahhq3ji8JhUB7b8fvceWM5a0ibPvqPvdKkspnjv6NmmCUT4kN4e40J1g2a+y0ISqHGifkzOfhNA0KRkLTgaesVY4JRviPJjOGJ4ba4xEqIf2bUuN4r2PgdHS3wbDRqh5oaZsmMgVuLKwWLGH7kk25UF8q+hC/Y8PLwUcP9i7euTEndAs+WaVCSGaM3PzYxHCY1AVAv9W5j4deUFUtpRW+9JEl5e8allKzea6wCsmJIZszjqejQrbGhbJPmAZAz8DNDp4wpjXGZObmTp+S96t/4F+jckpeaCpWG2oVPEej7/8aABry52H+5tOAdNAqLCuAT8lL8c8GydgIgr8jsN6v4g+ItYFHQvjjo/36cKC4DGD/42iKA+G8erCZebfiyFy0rHKr/+EYLwfo49cSx6iNHDodAa/rg4ps2EyREYR6C+6uX4Vox1TxcB7T8Z+wjAlQZm5wER+JcqAa1uZYEq8dPhtqCa/FP+lu1Um4exsNP0/GhiA0uXfzhwnUPbK5TKQLFvzaDKmZvj/F1Y490Ax+EsxOHpE9ML7iNDGydNk3fHJLirmm/QflBp6gCPJNbOMOc6nKSdxytq7/xoPlcZXHcoLJqFJ8K2I7LRdzVkPxJUoSt07LHB/qmPW9A31fievbo2Tt+Ekk/DInR9cutGWLaibbJ5tPHyf8qRXdwp7vfrWXmrcikXwSEob+/uFfNLBPQxSqu/moPNOBEt5/rofMvHOsH1Wl8EcPsd91s0lcG1Fxz/XYNr0A4igiSETkZd023Qpb6swFXzwfd3LX9nsS9pYux1v94BR4pguTgY+VYP1N7YL/S4K/IyDkZLvW/aoDogdq/iA7h/kU1QC4jnTt32rSR720OsfpHfJID8L5QaGC1gndZ9uHY/2oXks6DEkPh/teQTPu1mN0aJYZi/tN6cFz0/gGKIXOpLP5pyXQ8yVYxFPRfm0Yk05kisxiK41OSecjh/soihuL4WlWNc9Gv7Chi91tWE2z+0Sx7P2l+2iaGXvynJZN1xUc3cw5B5uS/0bLaKGKLoSf/tclED+jLeYTyHO6facmku2L1e+P+3Dl/OPEDn1QAkUyKIq4YeudH1QOsyejlDhocMewCPnzEKpl8MewSvvH+SMtFTmLYJXxKMtGF5XN+/0VLpprsHMSwa/6rT5Hi96TiJIZdxjdaKPz2kX0Z3GV8+CDpMtFrqef8/peSTA2eI4b/x3+Dohfx/l3zDOsB/PsB8eGSfyggcpGjkuNWFRmPiePji6gX9vcbmk8N74q+2MdL8OK/GkWP3UtG0+b8B5DnIlt0ryCXAAAAAElFTkSuQmCC",
+  img7: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAF8AAABfCAMAAAC5kuvHAAADAFBMVEUAAQAAAgABBAACBQEEBwIFCAQHCQUICwcKDAgLDQoOEAwPEQ0RExASFBETFBIUFRMVFhQWGBUYGRcZGxgaHBkdHxweHx0fIB4hIyAiJCEjJCIkJSMlJyQmKCUnKCYoKScpKygqLCkrLSotLiwuLy0yMzE0NjP/AAD/AAA2ODU3OTY4OTc6OzlAQT9ERkNFR0RGSEVHSUZISUdKS0lKTEpMTktOUE3/ICZTVFJVVlRWV1VWWFVXWVZaXFlbXVpcXlteYF1iZGH+Ojv/OzZjZWJkZWP/Ozz/PT1mZ2X/Pj7/PkRoaWdoamdpa2hqbGn+RERrbWr/RkX/R0X/R0v/SExucG1vcW7/Sk1xc3D/T01zdXL/UE7/UVR1d3T/UlV2eHV3eXb+V1V6fHn/WFb/WVd8fnt9f3yAgn+ChIGDhYKEhoOGiIWHiYaIioeKjImLjYqNj4yOkI2PkY6Qko+SlJGTlZKUlpOVl5SXmZaYmpeam5j/gH6cnpueoJ2foZ7/iImho6CjpaKlp6Soqqepq6iqrKmsrqutr6yusK2wsq6ztbK0trO2uLW3uba5u7i7vbq8vru9v7y+wb3Awr7Bw7/CxMHDxcLExsPFx8TGyMXHycbIysfJy8jKzMnLzsrNz8vP0c7Q0s/R09DT1dLU1tPW2NXY2tbZ29fa3Nnb3drc3tvd39ze4N3f4d7g4t/h5ODj5eHk5uPl5+Tm6OX/4uDn6ebo6ufp6+jq7Ont7+vu8O3v8e7w8u/x8/D98PDy9PH+8fHz9fL/8vL/8/T09/P/9PX89vX2+PT99/b3+fb++Pf4+vf/+fj5+/j/+vn6/Pn7/fr//Pr//fv8//v+//z///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////+17bi5AAABAHRSTlP///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8AU/cHJQAAAAFiS0dE1X68OxMAAAAEZ0lGZwAAAAp8We1TAAAADGNtUFBKQ21wMDcxMgAAAANIAHO8AAAHNklEQVRoQ7Va+29URRTeSTZNUwv4LEgrDwWb+kCxEQUUJEowWImbRkMohlfwgSgvUQIiPlBAeSNQAd1ATTcpNbtJKSu4QGkIXerdwA/zB3nuPO487tyZuYgnabftvfebM9+cOd85c5vBKSzAo7sCHKR4AmdS3Bzg4c7WrpupBkiBD37nWltbO3GQYgb++Ay+tTWHU8zAG5+QQ61z2H8AX3zghMOnosgTPyKHzsCfIk98PBwuLdhLjCLfKPLCD4KAkbPmwho6QJdnEHnh08AEWzwcTQQo8jEPfIgcBr9oGCCrixhFVZ8ocuMLclaFcQmjpaHIiQ88M+9zQ8RhsRF8osiFH+CqTA6lnFOUcyc7B34QVFnkLBebFmawikeRa43t+GJbdVJyqAV4qItvNEecuvyPk0OHGGZRBBRZzYYvVrJLz2hwaTmjqPof8Jn3XTI5EUVsALseJPsPsbGYuki2VdwkipJJSsQX5CSke7iBLXKMPcmXJHyxrZbHyYkoYmFqoSgBHyZsJ0eLokTJNONLOcCmhbC52e5LlEwjvhBDSGk2E8kuiSITvkrObz9Yh4iiyEyR0X+e73MhOUeyBVwKx7h+yTCQyH+dRsmM42v5HuO50/GCpwD6p3dC/HxJHcWhByb/WeSA98RG0Ob7l8DnnunwrXfKYGwW0XQN89PxNTEkT2xF6DP4ONCAceE+02pYJFPD18m5EuIPjkdfwccxVBlsCgfSzUaRii+JIY37fEseCHoZfQ4/n8oeb2+/Ywomi2Qq+HExvP4cWlHE76KZAHtu3KT63qRYTZJMGV9sR0kMP0XNW99HY8oYn29Ca5PgEyVTwhfkKGJ4MIvqUN0ejC82192i+Nv/NKyBWTIV/81iWHwMIbQC40stYyjs8VdGTPMwSmaEH+Cb8UqBwlTaEZpxBfc+mCX+dzd3JyyyQTIlfOa9lu9LRyBy6tHY4u2FqC7EPVy/1LwKUFXEJZPhgxgayaltRGjiPjwRoZMHEFpQ2rS6HY1PWmSlqmCSSfGTKoXzM7LAPXoaVmBOA8quawh/O5eIL0kmT3YEH8bi3KtiOHCq/+CEEJNYtg6huo6fk90PCy9NMkN8hxiur49GQC23LejkkqYHgC9VCuaSvrzsATZCU8EFr0tmJuyWefOTqLUlhn/aBU+8Zf0BkcyMKGETyigCSfEPq/C1kWI+rgYqRZmobc7Z+h0Cr8Z9be8H85c9vBvfGNAmpUhmJuoMrU05wd8gA/W1f92Hi0u7335xmU6arAeZHayvvWCgdu9DzdRaCH4j+y38aHz8b4zvrG54r/DjFsOTF1ifvCvD2581bv8l7covqQFqLdxqr2mCryzxaAYPsU4BetvkMpj4/1Hk6NE54D3YldnbS6SqkA3oYRUCVHVh/LABLPEzouKfb2N4d9ad3nIoRo+8xUj8s+FWJVXKuELw1zGka6+KqOx+M+a9SBFACNm/V0XFY6aoTPDnMagvvokwv59/LUYOS8S05GX5x0HRIN1fEO1g/S9EkDvfCpdZMYmc8O80fwZ8DczNxOW1PMNNO1SpPMnr0L9WzoqTwyQmx07peP4fUmalPvblZAbfOG1mx/Z5Z+jVgfUTUNM2PXL0fkDo1+sJzdzRR0Jm4GtjsXzj1spZ/QRy/8xGMujzpMLjFm/5uP6KMNWb0Z6TRXh8U3YWLp7Y0PZdCNXbAUpDbaxIGkpXz0eU9J2XweZ28NvreCGiqaaHyGRoj274J/JdiKPcLMn1z6g9irZNQfVP7AS8Ng6P6punPjufl6T2+keOIqV+Iw7WLn7CKBm3++MInvywmeADOWxpeeTQian1J6dIqj8xvlGp7H8jIlwFR2jcig/3kZTGa5+qcqKi1f83NYou7+54ZurkSYnoZLS54GdEjnbcodX/UbIjh2GFKVCUuG02wPMzNP3wO9a/jLI7w863Vr58qVweHBwolYrF/v6+QqG394+ennNn8/nfz5w+9Wv3iRO/HDty+Gx0ntUJ/Y+y42Ln/0CkO12rEBhzVkk/a8cPr7KdDILjZ5ycxYbbNX7CSAt4qUvOO10mOpc4OVp8MigIZR/JpHeLfpa3y25+vCSTw9zN+YOPZHLvHUdMcf7prK/ygLaf//ClTXf+Q0p2nzDl5JgiJ55/5JVxSSZNaZoYesWniCKLZNLIcR2OmeMzGiBIkkx6R0SO7RTdvL4sOPgaWM9vId9b9qAFX9o7lvNnx8s2Gz64lSiZ9+L8PFEy7+H5f6Qc6vuLSAxdGdDBD1CkSyb8KTpMsp/9h8vuxBc72fD+yP0Sz4kPeiBJpvz+y5jv9VB144dhKueiiBwf9XHzQx0Skmk7TE2Tf9RkxyUzen/qRY7P+rJUwSWT9bVmMbxb/2U9IF2Cz5tHe/7XXRGSCfAp/kXBI37oUKLL/F/+f0CiCMTQXRbx+Xv7HyU7tb63pH5yKQV+KLi5VOSkxIcBqjv8qSH+/wvgzRCIQ34xBgAAAABJRU5ErkJggg==",
+  img8: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAF8AAABfCAMAAAC5kuvHAAADAFBMVEUAAQAAAgABBAACBQEEBwIFCAQHCQUICwcKDAgLDQoMDwsOEAwPEQ0QEg8RExASFBETFBIUFRMVFhQWGBUXGBYYGRcaHBkbHBocHRsdHxweHx0fIB4gIR8jJCIkJSMnKCYoKScpKygqLCkrLSotLiwxMzAyMzEzNDI0NjP/AAD/AAA1NzT/AAc2ODX/ABM3OTb/ARQ4OTc5Ojg6Ozn/BhU7PTo8Pjs9Pzw+QD0/QD5BQ0FDRUJERkNFR0T+GRNJSkj/GxT/HB1MTkv/Hh7/HiVNT0z/ICZPUU5QUk9TVFJUVVNVVlRWV1VWWFVbXVr/MTVeYF1gYl9hY2BkZWNlZmT/PT1mZ2X/PkRoaWdoamdqbGn/R0VucG1vcW5xc3BydHFzdXJ2eHV5e3h7fXp8fnt+gH2Agn+Bg4CChIGDhYKIioeJi4iMjouOkI3/c3ORk5D/eXuVl5SWmJWXmZaYmpeam5j/gH7/goD/goacnpudn5z+hoefoZ7/h4j/iImjpaL/jYv/joz/j5L/kJOoqqf+lJSqrKn/lZX/lparrar/l5etr6z+m5j/nJmwsq7/nZr/naD/nqGytLH9oqK0trP+o6O1t7T/pKS2uLX/paW3ubb/pqa4ure5u7j9qaa6vLn/qqe7vbq8vrv/rKn/rK+9v7z/rbD/rrH9sLHAwr7+srLBw7//s7PCxMH/tLTDxcLExsPFx8TGyMXHycbIysfJy8jKzMnLzsrNz8vO0MzQ0s/R09DS1NHT1dLU1tP/y8rV19TW2NX9zsv+z8z90NP/0c7a3Nn61NX/1Nbc3tv81tb919fe4N3+2Nnf4d7/2drg4t//2tv/29zh5OD83dzj5eH93t3+397l5+T/4N/m6OX/4uDn6eb/4+H85eHp6+j95uLq7On+5+P/6OX96Ovr7ur+6ezt7+v/6u3u8O3v8e7/7e/87u/w8u/x8/D98PDy9PHz9fL/8/T09/P/9PX2+PT99/b3+fb4+vf5+/j6/Pn7/fr//fv8//v+//z///82PVDhAAABAHRSTlP///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8AU/cHJQAAAAFiS0dE/6UH8sUAAAAEZ0lGZwAAAAp8We1TAAAADGNtUFBKQ21wMDcxMgAAAANIAHO8AAAHoklEQVRoQ7Waa2wVRRTH7yQ3TVOBCiqoICj4ugEkaJSHL2LjRUAU8ImWqig+EFQ0NYoQCQGJEUyDQo3BgIiJBFEqgjaCpUIkJiAfih8gDSKhAg0iYCrcdnPimdkzszM7s3t3K8yHe+9ud35z5szM+Z+ZbQZSFM+D04AfKUomxbPgwfZH9uBnipKG78GeUbn8vlQNJOejX/68IZfLVfydxkUp+LCT47GBvSl6kJjvwc4Kgc/l8ikaSMiXzvEbSOGipHzY7TuHGkg8yMn4ODHv8MmvkIuSTtNkfDhE1td6i6kHx5MtgiR8nPc+ftB8hL5ODRxMNIsS8NE5o3zmMmHzojQuKs73YB855zNAkzE61FAPjiYIRUX5Co/O8SOPB29RA4eLj0Exvgc/kXNqNNj8xC4qwkfrCb+GG+4X/P6AGjhUbJDj+R4coJmzyAB5MHeQv5KPFmmgiP3baWgXWZ6eR2OwJ34M4vgi3ovyReAcy0Xx6yCaj5OPVu0gzTkFaa4H88hFx+P0IIYPLue8qLljboJZFMn3YDeFNG3mwMquiq/NophoGsHXnFOjz5BKtinogAe0DmL0IIoPO2jmLDTmx21ssnEtV3Kkorn5HuywlxWCCzeyfvv1DshYFCmZLr7mnFpz+bQNZmyB3gFPRdOIrMLJV2LI471ezgxhbFiHee+NWMl08IN4vyq8rApDGWNrzQ4AKVreKZku+6UYIl6WjtZ2/vMs5/cLRwQpmUcdocLim2KoajxZvg5/n7we+ex9/NW+VYORi/IH7GAX5geZQq1hzSx20e8Azf05/2YcgWNXig5RiZbMEB/jvWPVImUay84C2NqL87vWAfxY8oK+kkky85ZkmvxADBeGJuY4xu4D+CTL+Wwm/irto9mvJDMfFhyD7xZDzmm9hrEhf3RMF3g2oQDV2S7bDAdGSKbOD8TQivfNF6BbGgsDff6dbVDJSj40OqAk87DRc40fOMcUwxUbAZo4dk6jj2ejz7Rcy7JvG/YrycwbkqnbL+P9YnMef1RSD7s4ttcw4lfCVMayc8LT3SWZih8thmvRH78R2f+6dQB+ZGcDLP8laAP1YBkJjqYHxNdC2uLwIqlj7M3WvkYD/KJkAbT0qDZjhZRMdBElM5LvFEO/8maEVT9m8UvrYAK7O+QjkswKFYt8PophVKYA8DN3Rm/iDyyTDfWAKsYuD42xmkXSRZwfJYZU95Ru+oiNJXQ58QnupJD9lmQKvtwZ5kwxlHV1/hh4lS5L+XdZeA6BSn59yUQ+4p1iqKoO1RqYDjBCuxwQ5gfpuy+ZmWgx5FWXnsGPZzUgBoVvtctJtv2mZGZwaClTCIshrzpl/BGA+gDYk9/sFly/Z/PxjiaZGbX5scRQ2M9uaoJjqLpUpvCbY9Rl7yY48Y/DRYFkZk7f7y+6uU5LmrOsfDnMVMCP+VOBv6qgMMvi8xnzkg99/N8MNNDgOu0HLiiXjuZzstskxrpv4fw5eDW2C35cvb/xgeGWXTiqSyhQ7Obzh44t3JNzsjJ9zPos67vLdxobuO0S/MPw28vZvY5+y6wOFxmOr0rDQ8mUqPi54j8Nk9kVgr+SvQt/9aA/VNnuJzWu4FtwMf/l/lbPlGU1xUdHbBgvNOuHFQCbZJwwIpyxN/Pnv+DIZNbeBsFY2UB2Az6othfPy9v1YftliNsr/uDHB+UiIxkXD6CzsfBgcA9fa1SaZbzrZuI9WEjpIu1qZPyUIcJS3l8F6arnyhlbrljtExm7UOQSz+h8h8Qo/YrcKT4s7P9uy8uPTlOsdy4bOZ2HT5ZtNe2PiP/cRQdpp7skpF/bhJ0PdkB7m2KdOHKyIPymb8ewXqBfEuLQ3y9DWfM0QcIkwigoLoxdhzmjLGhibaT+iocaKNAtCaGEh3o1GndX8yV98WbjXmz+wI2mgxh9v8sBZ2fwBnp+o8Hqu+Od/mK1UdGPDLTbZv62l3oQdlHzpK4lLPvaSZkzf4r0skotgw5mTsUh41QolH82UPbsn1Rppb2u+qnRU+tQDbA/s/sMGTdDNx5vynkf2sWE83/qQdhFfkttLaf4V2FXU4u5CUPn0LKKzZ+1MbCPNMI90l0v05KKIvk/b0Dqgdq/bFn/tSgb7LKOllfi/QtvQB5GymTlrpJSUcrswtaLXgTx3uqktb/DJ2gl5/C8kJeRYn25y2r+AKkVnmXZxcEP9EAcSELVLSOiyuDvA3zy/W8gmQ49sEzUxDCZ/boerCpyfKeSKRRDebxotOLyvy6Zlh7otbUjpqgDGjcfITGSqTVhimFC/+BjmmQui3SRJYbJ+SKrplj0VfgUxce491vhJiL9gw9G7CcVwhLDNPbrkmlnFdx8WwxT8UWooNzUcpFbDFPy8XGpBzVW1XNw/qxLprkrjhDD9PZ7ICVTc1GkGKbncz0gTdYlM0IMO8HHKmHJjBbDTvGD90ciFgUxxxbDTvE1ycQtFJZz/P5Ll0yuBzFi2Dn7eS2Z/K7x4sSw0/xAMunto1sMO83HinKX6b+WOsfvfzU9EPgIMfw/9gcuOh/v34VlpAf4/wPJS5y+mBR5kMOd40wVnI0m59NB1Hn7/w1hXsNDSV/sU2/S2M9n0Wm32EcOyH8xRvU9ci1OZgAAAABJRU5ErkJggg==",
+  img9: "data:image/gif;base64,R0lGODlhXwBfAOfxAAAAAAUFBQYGBgcHBwgICAwMDA0NDQ4ODg8PDxERERMTExUVFRgYGBkZGRwcHB0dHSAgICEhISIiIiQkJCUlJScnJykpKSoqKiwsLDMzM/4AAP8AAP8BAf8CAv8DA/8EBDo6Ov8FBf8GBjs7O/8HB/8ICD8/P0FBQf4REf8REURERP4SEv8SEv4TE/8TE/4UFP8UFEdHR/4WFv8WFv4XF/8XF0lJSf8YGP4ZGf8ZGUpKSv4aGv8aGv4bG0xMTP4iIv8iIv4jI/8jI1JSUv4kJP8kJP4lJf8lJVRUVFZWVlhYWF1dXf81NWNjY2ZmZv4/P2hoaP9CQmxsbP9ISHh4eHt7e4GBgYeHh4mJiYyMjI2NjY+Pj5CQkJGRkf90dJKSkpaWlv96epmZmf+AgP+Dg56env+EhP+FhZ+fn/+Ghv+Hh/+IiP+Kiv+MjP+Ojv+QkP+Rkf+Skv+Tk6qqqv+UlP+Vlf+Wlv+Xl/+YmP+Zmf+amv+bm/+cnP+dnf+env+fn7S0tP+goP+hof+iora2tv+jo/+kpP+lpbm5uf+np/+oqP+pqby8vP+qqr29vf+srP+trf+ursDAwP+vr/+wsMHBwf+xsf+ysv+zs/+0tMTExP+1tcbGxsjIyMnJyc/Pz9DQ0NHR0dPT09TU1NbW1v/Ly//MzP7Ozv/Ozv7Pz//Pz9ra2v7R0f/R0dvb2/7U1N3d3f/U1P7V1f/V1d7e3t/f3/7X1//X1//Y2P7Z2f/Z2f7a2v/a2v7b2//b2+Pj4//c3P7d3f/d3f7e3uXl5f/e3v/f3/7g4P/g4Ofn5//h4ejo6P/i4unp6f7k5P/k5P7l5f/l5evr6/7n5//n5/7o6P/o6O3t7f7p6f/p6e7u7v7r6//r6//t7fHx8f/u7v7v7//v7/T09P/z8/b29v/09Pf39//19f/29vj4+Pn5+fv7+/z8/P39/f7+/v/+/v7//////////////////////////////////////////////////////////////yH5BAEKAP8ALAAAAABfAF8AAAj+AOMJHEiwoMGDCBG+exfvHLyFCSNKnEixokWC7+ClisLr4cWPIEN+zKiLxwYjzOIxFMmypUiI2Vhs2KBBSDiVK13q3Kkw3qwXM4MKMaaSp9GjDGf10BA0qBGiOY9KBQkRGwymTYXehDi1a0WGuFxkHSskZVSvaA1mbLVDA9aZYcYaAVY0rd2C1mBk7ZDonR6y3+DdvcsQWIq3Gz7AGUiGQ9Oa0eoOnspQVY6xhQrWGVukl+TJPBk+m+G26SOBDFf6IcuNK2idDJEdfisizueiZzxkFVINnrvXLjOeujHWj8Q3nHndBm6R4THiWSehPrhSUFYNRKy5O8t8IkNnh5v+kqizvCDDNR92cyvfPaGqGTSb5vnY5roQz+29w/N1OSul6d4JZF1WRUDDXnsQURNeUCTMx51EDLWRXlA1fYNTfubF08pVWZHX0hrXBQGMRxhOZ8sO8QUl3YERVTcWEcqwSBhD1sjUlAjGPXgRQ3Do1pRNF3bHUCwulBaUHFKlQdYwMno1JA+IbQAJgMEJ9MdYRwxD4mQQWdNCVh8Y0uRI8djhWFNBgBMkYfHYwgJiHdiWlhlkxaijVAy1AiVii1CJlEB7XFcEXXcaBQ81ejXVQZ+TBbpbN4KhxZAvC870gZygmXFmUEE4MyZV8aSCQ5RiMmcHZ7t82hw8z8gwViT+ftq10pVZBdFaoWQeg0JWIiCJq5PxpOEjp9ao2iI8w431R4kCwSGocr9CGM9zUf5nLJ4CPqZBEdVsx5JoKCBGgh3XAoteretFi9B7Kc6kh12/CRQvRfXtphxV+/XXlCWx7jQvO5/IO9C8Atc1CGfPfJpgpRuQ8K66H6mjDSxfgAAAABCQMpA515CCRQYLiJKhhI+umdBaHDZF7lTeVNLFEhVcLDMADsyBiBZKRDDzCAiBuNuIuDJ0i0mIWQuxRNKIEcMDCMzsNAACFPA0AEqolW1WMLLXpY1BibDs0QXH40463oRSxQRTp+30AAaAAEY7BA/E47AzAema3PG8UmT+Vkh+RDAxjGyBBANqFw7AAzZQAYg3A0ek5G7FbDndKyZlBeuY7sw7yhUnSCC14YUnUQs5A8edYTy0NnVE5Ct1+WVTYX7qzjrqSOJEAqDnDgABjITEkJm1qrkQQ7asACemEf3WjCNZ6CCA7tAvIE5LdO6mjEeo7NkUo7/SQkEA0IdvACFi+w7odUfoAs84TIyVxkUqhK/7AlJ0ws5O73gx1hToxFNK5U1pRL8MIj+1HeACPuDCKkIjkD48ZgNFwIVv4iELrs0kThRJRwGd1oAllIETy+jK45oChGMEiRotQEwIDiGjDQKAAlZwxTrYMS/TvSQeeNjUTH4QmMyhBh7+enrVAH8TA90pwAJDKIM0GoeteAyoKUUQxm3cAQ9WiAUxdJCIJgyHASigwROMk5cNjaKGB/4gGOUzz2+osQJeBYI960jC1E4ghl+IYx0EGSMD5UC3DfDQZBjxCQCDcokBJsMECFAABZoAiBpySSCF4AwyxoSKRDUFDwj5jToqAYo8docNYwGCL5r0jt9Eg2Ek4MNy9AgahrhhQkEBAqS8RRGG5EJfQcHEABEkEENchwgJA5tATAGfrKiSWQZxA1nUd0NmhOstJMCkMLvCEDbAkiY/2EYazVeMGhhpJoUsl1FWEsndUONu5isFDcYiCGTKYZniNAgVi7GrG5FrmrD+iYca+vgDasSTOvFgRjGDwgGjtfJqP9oGOvNpClzOJBHdwcMv1YdPaeWCYSHI4mvSoMMNAOEZE0xLNCw5Ew+cZjIOzIosB8OQ7I3lpBVtUQMf2Jl/XoSKFcyKBzyElhHG8hiSS8tKpvG6oIRAETYFaA6zwsOHsJIyGhrkTPiVVAA9MShRrGpIqGjFdnHgDlIpI4X8iManSmqNbRRPZmJaFD4y1UILfU1SUJSVTOxSWvEoJxQnydajVHIs72oJKFU6yr6GxpQpyEoJckSmV6p0loYdZzxuOZZN3DWQ8fDlY4CpVa+YwlVZMc5FlLkbZiKzJ878ZgkeJi1rPiab2zy0rdW62a4N2LU85CTLOSMrK//VADMSeWdpOzuYedaTQdLM0D5f60/ecgkeAt1LOFODUKEo1LkHbehYGDUQiW6WorIF1UURIwKwCoSjKgWpWcObkJGCKRLvSCkJu8HelrRUqhsYA009g10M4dSCY/EoUPuLoaGKJcB+DEwp65vPIHJGigQ+LRVbccX4AKGsDB4nQ9g4Ew38Ma4Z/pYgN0AEvobYK6V4gi6Ie2K5/aYcYovwRAICADs=",
+};
+
+const GREEN = "#00b050";
+const NAVY = "#1a5c32";
+
+const HAZARDS = [
+  {key:"HealthHazard",   img:"img1", label:"Health Hazard / Ozone Layer"},
+  {key:"AcuteToxicity",  img:"img2", label:"Acute Toxicity"},
+  {key:"SeriousHealth",  img:"img3", label:"Serious Health Hazard"},
+  {key:"Oxidising",      img:"img4", label:"Oxidising"},
+  {key:"Explosive",      img:"img5", label:"Explosive"},
+  {key:"Corrosive",      img:"img6", label:"Corrosive"},
+  {key:"Environmental",  img:"img7", label:"Environmental"},
+  {key:"Flammable",      img:"img8", label:"Flammable"},
+  {key:"GasesUnderPressure", img:"img9", label:"Gases Under Pressure"},
+];
+
+const BLANK = {
+  id:"", productName:"", manufacturer:"", mfrAddress:"", mfrTel:"",
+  assessDate:"", reviewDate:"", sdsRef:"", sdsAttached:"Yes",
+  location:"", task:"", processDesc:"", hPhrases:"", hPhrasesNone:false,
+  hazards:[], substanceForm:"", dilution:"", prepRequired:"",
+  routeOfEntry:[], wel:"No", welExceeded:"No", welHSContacted:"N/A",
+  amountStored:"", amountUsed:"", method:"", duration:"", frequency:"",
+  standalone:"Yes", accumulated:"No", separateAssess:"No", separateAssessConfirm:false,
+  footwearType:"", protFactor:"", specsApprop:"Yes",
+  ventGeneral:false, ventLEV:false, airMonitor:false, ventNA:false,
+  ventGeneralMech:"", ventLEVMech:"", airMonitorMech:"",
+  ventGeneralAction:"", ventLEVAction:"", airMonitorAction:"",
+  preCreams:false, gloves:false, apron:false, footwear:false, skinNA:false,
+  preCreamsDesc:"", glovesDesc:"", apronDesc:"", footwearAction:"",
+  preCreamsAction:"", glovesAction:"", apronAction:"",
+  halfMask:false, fullMask:false, dustMask:false, respNA:false,
+  halfMaskDesc:"", fullMaskDesc:"", dustMaskDesc:"",
+  halfMaskAction:"", fullMaskAction:"", dustMaskAction:"",
+  safetySpecs:false, goggles:false, faceShield:false, eyeNA:false,
+  safetySpecsDesc:"", gogglesDesc:"", faceShieldDesc:"",
+  safetySpecsAction:"", gogglesAction:"", faceShieldAction:"",
+  staffTrained:false, healthSurv:false, occupHealth:false, sysMonitored:false,
+  staffTrainedDesc:"", healthSurvDesc:"", occupHealthDesc:"", sysMonitoredDesc:"",
+  staffTrainedAction:"", healthSurvAction:"", occupHealthAction:"", sysMonitoredAction:"",
+  locationOfSDS:"", storage:"", useInstructions:"", controlMeasures:"", disposal:"",
+  firstAid:"", fire:"", notes:"",
+  assessorName:"", assessorTitle:"", managerName:"", managerTitle:"",
+  savedAt:"", sdsUrl:"", sdsData:null, sdsFilename:"",
+};
+
+function today() { return new Date().toISOString().split("T")[0]; }
+function nextYear() { const d=new Date(); d.setFullYear(d.getFullYear()+1); return d.toISOString().split("T")[0]; }
+function fmtDate(d) { if(!d) return "-"; try { return new Date(d).toLocaleDateString("en-GB"); } catch(e) { return d; } }
+function statusInfo(reviewDate, days) {
+  if (!reviewDate) return {label:"Unknown", cls:"due"};
+  const diff = Math.floor((new Date(reviewDate)-new Date())/86400000);
+  if (diff < 0) return {label:"(!)️ Overdue", cls:"overdue"};
+  if (diff <= days) return {label:"(clock) Due Soon", cls:"due"};
+  return {label:"v Current", cls:"current"};
+}
+function load(key, def) { try { return JSON.parse(localStorage.getItem(key)||"null") || def; } catch(e) { return def; } }
+function saveLocal(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {} }
+
+// -- EMAIL REMINDER via mailto --
+function buildReminderEmail(products, settings, rd) {
+  const overdue = products.filter(p => {
+    if (!p.reviewDate) return false;
+    return new Date(p.reviewDate) < new Date();
+  });
+  const due = products.filter(p => {
+    if (!p.reviewDate) return false;
+    const diff = Math.floor((new Date(p.reviewDate) - new Date()) / 86400000);
+    return diff >= 0 && diff <= rd;
+  });
+  if (!overdue.length && !due.length) return null;
+
+  const school = settings.schoolName || "Your School";
+  const lines = [`COSHH Assessment Review Reminder - ${school}`, `Generated: ${new Date().toLocaleDateString("en-GB")}`, ""];
+
+  if (overdue.length) {
+    lines.push(`OVERDUE (${overdue.length}):`);
+    overdue.forEach(p => lines.push(`  * ${p.productName} - review was due ${new Date(p.reviewDate).toLocaleDateString("en-GB")}`));
+    lines.push("");
+  }
+  if (due.length) {
+    lines.push(`DUE WITHIN ${rd} DAYS (${due.length}):`);
+    due.forEach(p => lines.push(`  * ${p.productName} - review due ${new Date(p.reviewDate).toLocaleDateString("en-GB")}`));
+    lines.push("");
+  }
+  lines.push("Please log in to your COSHH Manager to update these assessments.");
+  lines.push("Remember: original risk assessments must be kept for 40 years.");
+  return lines.join("\n");
+}
+
+// -- EXPORT REGISTER TO CSV --
+function exportToCSV(products) {
+  const headers = [
+    "Product Name","Manufacturer","Location","Task","Assessment Date","Review Date",
+    "Status","SDS Ref","SDS Attached","Hazards","H Phrases","Substance Form",
+    "Route of Entry","WEL","Storage","First Aid","Fire","Assessor","Manager","Saved"
+  ];
+  const escape = v => {
+    if (v === null || v === undefined) return "";
+    const s = Array.isArray(v) ? v.join("; ") : String(v);
+    return s.includes(",") || s.includes('"') || s.includes("\n")
+      ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const today = new Date();
+  const rows = products.map(p => {
+    const diff = p.reviewDate ? Math.floor((new Date(p.reviewDate) - today) / 86400000) : null;
+    const status = diff === null ? "Unknown" : diff < 0 ? "Overdue" : diff <= 60 ? "Due Soon" : "Current";
+    return [
+      p.productName, p.manufacturer, p.location, p.task,
+      p.assessDate ? new Date(p.assessDate).toLocaleDateString("en-GB") : "",
+      p.reviewDate ? new Date(p.reviewDate).toLocaleDateString("en-GB") : "",
+      status, p.sdsRef, p.sdsAttached,
+      (p.hazards||[]).join("; "), p.hPhrases,
+      p.substanceForm, (p.routeOfEntry||[]).join("; "), p.wel,
+      p.storage, p.firstAid, p.fire,
+      p.assessorName + (p.assessorTitle ? " / " + p.assessorTitle : ""),
+      p.managerName + (p.managerTitle ? " / " + p.managerTitle : ""),
+      p.savedAt ? new Date(p.savedAt).toLocaleDateString("en-GB") : ""
+    ].map(escape).join(",");
+  });
+  const csv = [headers.join(","), ...rows].join("\n");
+  const blob = new Blob([csv], {type: "text/csv;charset=utf-8;"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `COSHH_Register_${new Date().toISOString().split("T")[0]}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+// localStorage save kept for API key only
+function save(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {} }
+
+// --- STYLES -------------------------------------------------------------------
+const S = {
+  app: { fontFamily:"DM Sans,system-ui,sans-serif", background:"#f8fafc", minHeight:"100vh" },
+  header: { background:NAVY, padding:"0 24px", height:56, display:"flex", alignItems:"center",
+            justifyContent:"space-between", position:"sticky", top:0, zIndex:100,
+            boxShadow:"0 2px 12px rgba(0,0,0,.3)" },
+  tabs: { display:"flex", gap:4, padding:"16px 24px 0", background:"white",
+          borderBottom:"1px solid #e2e8f0" },
+  tab: (active) => ({ padding:"8px 18px", border:"none", borderRadius:"6px 6px 0 0",
+    cursor:"pointer", fontFamily:"inherit", fontSize:14, fontWeight:500,
+    background: active ? GREEN : "transparent",
+    color: active ? "white" : "#64748b",
+    borderBottom: active ? `2px solid ${GREEN}` : "2px solid transparent",
+    transition:"all .15s" }),
+  main: { padding:24, maxWidth:1320, margin:"0 auto" },
+  card: { background:"white", borderRadius:10, boxShadow:"0 1px 3px rgba(0,0,0,.08)",
+          border:"1px solid #e2e8f0" },
+  cardHead: { padding:"14px 20px", borderBottom:"1px solid #e2e8f0",
+              display:"flex", alignItems:"center", justifyContent:"space-between" },
+  cardBody: { padding:20 },
+  secTitle: { fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:".06em",
+              color:GREEN, borderBottom:`2px solid #e6f7ee`, paddingBottom:6,
+              marginBottom:14, marginTop:20 },
+  grid2: { display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 },
+  grid3: { display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:14 },
+  fGroup: { display:"flex", flexDirection:"column", gap:5 },
+  label: { fontSize:12, fontWeight:600, color:"#334155" },
+  input: { padding:"8px 10px", border:"1px solid #cbd5e1", borderRadius:6,
+           fontFamily:"inherit", fontSize:14, outline:"none",
+           transition:"border-color .15s", width:"100%", boxSizing:"border-box" },
+  btn: (variant="primary") => {
+    const bg = variant==="green" ? GREEN : variant==="danger" ? "#dc2626" : variant==="ghost" ? "white" : NAVY;
+    const color = variant==="ghost" ? "#334155" : "white";
+    const border = variant==="ghost" ? "1px solid #cbd5e1" : `1px solid ${bg}`;
+    return { padding:"8px 18px", background:bg, color, border, borderRadius:6,
+             cursor:"pointer", fontFamily:"inherit", fontSize:13, fontWeight:600,
+             transition:"opacity .15s" };
+  },
+  badge: (cls) => {
+    const map = { current:["#e6f7ee","#007a38"], due:["#fef3c7","#d97706"], overdue:["#fee2e2","#dc2626"], unknown:["#f1f5f9","#64748b"] };
+    const [bg,color] = map[cls]||map.unknown;
+    return { background:bg, color, padding:"3px 10px", borderRadius:20,
+             fontSize:12, fontWeight:600, display:"inline-block" };
+  },
+  aiBox: { background:"#f0fdf4", border:`1px solid #b3e6cc`, borderRadius:8,
+           padding:14, marginTop:12 },
+  aiErr: { background:"#fee2e2", border:"1px solid #fca5a5", borderRadius:8,
+           padding:14, marginTop:12, color:"#dc2626", fontSize:13 },
+  aiLoad: { background:"#e6f7ee", border:"1px solid #b3e6cc", borderRadius:8,
+            padding:14, marginTop:12, color:"#1a5c32", fontSize:13,
+            display:"flex", alignItems:"center", gap:10 },
+};
+
+// --- FIELD COMPONENTS ---------------------------------------------------------
+function Field({label, children, span2}) {
+  return (
+    <div style={{...S.fGroup, gridColumn:span2?"span 2":undefined}}>
+      <label style={S.label}>{label}</label>
+      {children}
+    </div>
+  );
+}
+function Input({id, value, onChange, placeholder, disabled, type="text"}) {
+  const isEmpty = !disabled && (!value || value.toString().trim()==="");
+  return <input type={type} id={id} value={value||""} onChange={e=>onChange(e.target.value)}
+    placeholder={placeholder} disabled={disabled}
+    style={{...S.input,
+      background: disabled?"#f8fafc": isEmpty?"#fffbeb":"white",
+      borderColor: isEmpty?"#fcd34d":"#cbd5e1",
+      color:disabled?"#94a3b8":"#0f172a"}}
+    onFocus={e=>{e.target.style.borderColor=GREEN; e.target.style.background="white";}}
+    onBlur={e=>{
+      const v = e.target.value.trim();
+      e.target.style.borderColor = v?"#cbd5e1":"#fcd34d";
+      e.target.style.background = v?"white":"#fffbeb";
+    }} />;
+}
+function Select({value, onChange, options}) {
+  const isEmpty = !value || value.toString().trim()==="";
+  return (
+    <select value={value||""} onChange={e=>onChange(e.target.value)}
+      style={{...S.input, cursor:"pointer",
+        background: isEmpty?"#fffbeb":"white",
+        borderColor: isEmpty?"#fcd34d":"#cbd5e1"}}
+      onFocus={e=>{e.target.style.borderColor=GREEN; e.target.style.background="white";}}
+      onBlur={e=>{
+        const v = e.target.value.trim();
+        e.target.style.borderColor = v?"#cbd5e1":"#fcd34d";
+        e.target.style.background = v?"white":"#fffbeb";
+      }}>
+      {options.map(o => typeof o==="string"
+        ? <option key={o} value={o}>{o}</option>
+        : <option key={o.v} value={o.v}>{o.l}</option>)}
+    </select>
+  );
+}
+function Textarea({value, onChange, placeholder, rows=3}) {
+  const isEmpty = !value || value.toString().trim()==="";
+  return <textarea value={value||""} onChange={e=>onChange(e.target.value)}
+    placeholder={placeholder} rows={rows}
+    style={{...S.input, resize:"vertical", minHeight:rows*22,
+      background: isEmpty?"#fffbeb":"white",
+      borderColor: isEmpty?"#fcd34d":"#cbd5e1"}}
+    onFocus={e=>{e.target.style.borderColor=GREEN; e.target.style.background="white";}}
+    onBlur={e=>{
+      const v = e.target.value.trim();
+      e.target.style.borderColor = v?"#cbd5e1":"#fcd34d";
+      e.target.style.background = v?"white":"#fffbeb";
+    }} />;
+}
+function CB({label, checked, onChange}) {
+  return (
+    <label style={{display:"flex", alignItems:"center", gap:8, fontSize:13, cursor:"pointer", userSelect:"none"}}>
+      <input type="checkbox" checked={!!checked} onChange={e=>onChange(e.target.checked)}
+        style={{width:15, height:15, accentColor:GREEN, cursor:"pointer"}} />
+      {label}
+    </label>
+  );
+}
+function Spinner() {
+  return <span style={{width:14,height:14,border:"2px solid currentColor",borderTopColor:"transparent",
+    borderRadius:"50%",display:"inline-block",animation:"spin .7s linear infinite"}} />;
+}
+
+// --- LOGIN SCREEN -------------------------------------------------------------
+function LoginScreen({ onLogin }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [mode, setMode] = useState("login"); // "login" | "signup"
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!email.trim() || !password.trim()) { setError("Please enter your email and password."); return; }
+    if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
+    setLoading(true); setError("");
+    try {
+      const data = mode === "signup" ? await supa.signUp(email, password) : await supa.signIn(email, password);
+      if (data.error || data.error_description) {
+        setError(data.error_description || data.error?.message || "Authentication failed.");
+      } else if (data.access_token) {
+        onLogin({ token: data.access_token, userId: data.user?.id || data.user_id, email });
+      } else if (mode === "signup" && data.id) {
+        setMode("login");
+        setError("");
+        setPassword("");
+        alert("Account created! Please check your email to confirm, then log in.");
+      } else {
+        setError("Unexpected response - please try again.");
+      }
+    } catch(e) {
+      setError("Connection error - please check your internet and try again.");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{textAlign:"center",marginBottom:32}}>
+        <div style={{width:56,height:56,background:NAVY,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 12px"}}>🛡️</div>
+        <div style={{fontSize:22,fontWeight:800,color:NAVY}}>COSHH Manager</div>
+        <div style={{fontSize:13,color:"#64748b",marginTop:4}}>Hampshire County Council Template</div>
+      </div>
+      <div style={{background:"white",borderRadius:12,boxShadow:"0 4px 24px rgba(0,0,0,.08)",border:"1px solid #e2e8f0",padding:32,width:"100%",maxWidth:380}}>
+        <div style={{fontWeight:700,fontSize:18,color:NAVY,marginBottom:6}}>{mode==="login" ? "Sign in to your account" : "Create your account"}</div>
+        <div style={{fontSize:13,color:"#64748b",marginBottom:24}}>
+          {mode==="login" ? "Your COSHH assessments are securely stored in the cloud." : "Start your free account - all assessments saved securely."}
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div>
+            <label style={{fontSize:12,fontWeight:600,color:"#334155",display:"block",marginBottom:5}}>Email address</label>
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+              placeholder="e.g. caretaker@school.sch.uk"
+              onKeyDown={e=>e.key==="Enter"&&handleSubmit()}
+              style={{width:"100%",padding:"10px 12px",border:"1px solid #cbd5e1",borderRadius:7,fontFamily:"inherit",fontSize:14,boxSizing:"border-box",outline:"none"}} />
+          </div>
+          <div>
+            <label style={{fontSize:12,fontWeight:600,color:"#334155",display:"block",marginBottom:5}}>Password</label>
+            <input type="password" value={password} onChange={e=>setPassword(e.target.value)}
+              placeholder="Minimum 6 characters"
+              onKeyDown={e=>e.key==="Enter"&&handleSubmit()}
+              style={{width:"100%",padding:"10px 12px",border:"1px solid #cbd5e1",borderRadius:7,fontFamily:"inherit",fontSize:14,boxSizing:"border-box",outline:"none"}} />
+          </div>
+          {error && <div style={{background:"#fee2e2",border:"1px solid #fca5a5",borderRadius:7,padding:"10px 12px",fontSize:13,color:"#dc2626"}}>{error}</div>}
+          <button onClick={handleSubmit} disabled={loading}
+            style={{background:GREEN,color:"white",border:"none",borderRadius:7,padding:"11px 0",fontFamily:"inherit",fontSize:15,fontWeight:700,cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1,transition:"opacity .15s"}}>
+            {loading ? "Please wait..." : mode==="login" ? "Sign In" : "Create Account"}
+          </button>
+          <div style={{textAlign:"center",fontSize:13,color:"#64748b"}}>
+            {mode==="login" ? <>Don't have an account? <button onClick={()=>{setMode("signup");setError("");}} style={{background:"none",border:"none",color:GREEN,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>Sign up free</button></> : <>Already have an account? <button onClick={()=>{setMode("login");setError("");}} style={{background:"none",border:"none",color:GREEN,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>Sign in</button></>}
+          </div>
+        </div>
+      </div>
+      <div style={{marginTop:20,fontSize:12,color:"#94a3b8",textAlign:"center"}}>🔒 Secured by Supabase . Data stored in UK cloud</div>
+    </div>
+  );
+}
+
+// --- MAIN APP -----------------------------------------------------------------
+function App() {
+  // -- AUTH STATE --
+  const [session, setSession] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("coshh_session")||"null"); } catch(e) { return null; }
+  });
+  const [syncStatus, setSyncStatus] = useState(null); // null | "syncing" | "saved" | "error"
+  const [schoolId, setSchoolId] = useState(null);
+
+  const [tab, setTab] = useState("register");
+  const [products, setProducts] = useState([]);
+  const [settings, setSettings] = useState(() => load("coshh_settings", {
+    schoolName:"", schoolAddress:"", assessorName:"", assessorTitle:"",
+    managerName:"", email:"", reminderDays:60, emailLastSent:{}, apiKey:""
+  }));
+  const [form, setForm] = useState({...BLANK, assessDate:today(), reviewDate:nextYear()});
+  const [editingId, setEditingId] = useState(null);
+  const [search, setSearch] = useState("");
+  const [aiQuery, setAiQuery] = useState("");
+  const [aiStatus, setAiStatus] = useState(null); // null | {type, msg}
+  const [printData, setPrintData] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [sdsLoading, setSdsLoading] = useState(false);
+  const [emailStatus, setEmailStatus] = useState(null); // null | "sent" | "no-email" | "nothing-due"
+  const [dataLoading, setDataLoading] = useState(false);
+
+  // -- HANDLE LOGIN --
+  const handleLogin = (sess) => {
+    localStorage.setItem("coshh_session", JSON.stringify(sess));
+    setSession(sess);
+  };
+
+  // -- HANDLE LOGOUT --
+  const handleLogout = async () => {
+    if (session?.token) { try { await supa.signOut(session.token); } catch(e) {} }
+    localStorage.removeItem("coshh_session");
+    setSession(null);
+    setProducts([]);
+    setSchoolId(null);
+  };
+
+  // -- LOAD DATA FROM SUPABASE ON LOGIN --
+  useEffect(() => {
+    if (!session) return;
+    const loadData = async () => {
+      setDataLoading(true);
+      try {
+        // Load school/settings
+        const school = await supa.getSchool(session.token, session.userId);
+        if (school) {
+          setSchoolId(school.id);
+          setSubExpiry(school.subscription_expires || null);
+          setSubPlan(school.subscription_plan || "trial");
+          setSubChecked(true);
+          setSettings(s => ({
+            ...s,
+            schoolName: school.school_name || s.schoolName,
+            schoolAddress: school.school_address || s.schoolAddress,
+            assessorName: school.assessor_name || s.assessorName,
+            assessorTitle: school.assessor_title || s.assessorTitle,
+            managerName: school.manager_name || s.managerName,
+            reminderDays: school.reminder_days || s.reminderDays,
+          }));
+        } else {
+          setSubChecked(true);
+        }
+        // Load assessments
+        const assessments = await supa.getAssessments(session.token, session.userId);
+        setProducts(assessments);
+      } catch(e) {
+        console.error("Load error:", e);
+      }
+      setDataLoading(false);
+    };
+    loadData();
+  }, [session]);
+
+  // -- SUBSCRIPTION STATE --
+  const [subExpiry, setSubExpiry] = useState(null);
+  const [subPlan, setSubPlan] = useState(null);
+  const [subChecked, setSubChecked] = useState(false);
+
+  // Check subscription when school loads
+  useEffect(() => {
+    if (!session) return;
+    const checkSub = async () => {
+      try {
+        const school = await supa.getSchool(session.token, session.userId);
+        if (school) {
+          setSubExpiry(school.subscription_expires || null);
+          setSubPlan(school.subscription_plan || "trial");
+        } else {
+          // No school record yet - treat as trial (just logged in)
+          setSubPlan("trial");
+        }
+      } catch(e) {}
+      setSubChecked(true);
+    };
+    checkSub();
+  }, [session]);
+
+  // -- SHOW LOGIN IF NOT AUTHENTICATED --
+  if (!session) return <LoginScreen onLogin={handleLogin} />;
+
+  // -- SUBSCRIPTION EXPIRED SCREEN --
+  if (subChecked && subPlan !== "owner" && subExpiry && new Date(subExpiry) < new Date()) {
+    return (
+      <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div style={{width:"100%",maxWidth:480,textAlign:"center"}}>
+          <div style={{width:60,height:60,background:"#fee2e2",borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,margin:"0 auto 16px"}}>(clock)</div>
+          <div style={{fontWeight:800,fontSize:22,color:NAVY,marginBottom:8}}>Your subscription has expired</div>
+          <div style={{fontSize:14,color:"#64748b",marginBottom:24,lineHeight:1.6}}>
+            Your COSHH Manager subscription expired on <strong>{new Date(subExpiry).toLocaleDateString("en-GB")}</strong>.<br/>
+            Your data is safe and waiting - please renew to regain access.
+          </div>
+          <div style={{background:"white",borderRadius:12,border:"1px solid #e2e8f0",padding:24,marginBottom:20,textAlign:"left"}}>
+            <div style={{fontWeight:700,color:NAVY,marginBottom:12}}>To renew your subscription:</div>
+            <div style={{fontSize:13,color:"#334155",lineHeight:2}}>
+              📧 Email: <strong>hello@coshhmanager.co.uk</strong><br/>
+              📞 Or contact your COSHH Manager administrator<br/>
+              💳 Annual renewal from <strong>GBP 149/year</strong>
+            </div>
+          </div>
+          <button onClick={handleLogout}
+            style={{background:"none",border:"1px solid #cbd5e1",borderRadius:7,padding:"9px 20px",fontFamily:"inherit",fontSize:13,cursor:"pointer",color:"#64748b"}}>
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Read uploaded file to base64, store it, then extract SDS data via AI
+  const handleSdsUpload = useCallback(async (file) => {
+    if (!file) return;
+    setSdsLoading(true);
+    setAiStatus({type:"loading", msg:`Reading "${file.name}"...`});
+    try {
+      // Read file to base64 data URL
+      const dataUrl = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = e => res(e.target.result);
+        r.onerror = () => rej(new Error("Could not read file"));
+        r.readAsDataURL(file);
+      });
+
+      // Store the file immediately
+      setForm(f => ({...f, sdsData: dataUrl, sdsFilename: file.name}));
+
+      // Now extract SDS data via AI
+      setAiStatus({type:"loading", msg:`Extracting data from "${file.name}"...`});
+
+      const base64 = dataUrl.split(",")[1];
+      const mediaType = file.type || (file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : "image/png");
+      const isImage = mediaType.startsWith("image/");
+
+      const prompt = `Extract all COSHH data from this Safety Data Sheet. Return ONLY this JSON with no other text:
+{"productName":"","manufacturer":"","mfrAddress":"","mfrTel":"","sdsRef":"","hPhrases":"","hazards":[],"substanceForm":"","routeOfEntry":[],"wel":"","storage":"","useInstructions":"","disposal":"","firstAid":"","fire":""}
+hazards array (include relevant): HealthHazard,AcuteToxicity,SeriousHealth,Oxidising,Explosive,Corrosive,Environmental,Flammable,GasesUnderPressure
+routeOfEntry array (include relevant): Inhalation,Skin contact,Eye contact,Ingestion,Skin absorption
+substanceForm (pick one): Liquid,Solid,Gas / Vapour,Aerosol / Spray,Powder / Dust,Gel / Paste,Foam
+wel: Yes or No or Unknown`;
+
+      let raw;
+      if (isImage) {
+        // Image: send directly to vision API
+        const uploadKey = settings.apiKey?.trim();
+        if (!uploadKey) throw new Error("No API key - please add your Anthropic API key in Settings.");
+        const res = await fetch("https://round-feather-e5a3.u2cstevo.workers.dev", {
+          method: "POST",
+          headers: {"Content-Type": "application/json", "anthropic-version": "2023-06-01", "x-api-key": uploadKey},
+          body: JSON.stringify({
+            model: "claude-haiku-4-5",
+            max_tokens: 700,
+            messages: [{
+              role: "user",
+              content: [
+                {type: "image", source: {type: "base64", media_type: mediaType, data: base64}},
+                {type: "text", text: prompt}
+              ]
+            }]
+          })
+        });
+        if (!res.ok) throw new Error(`API error ${res.status}`);
+        const data = await res.json();
+        raw = data.content.filter(b => b.type === "text").map(b => b.text).join("");
+      } else {
+        // PDF: use web search to find SDS by filename/product name
+        const productHint = file.name
+          .replace(/[-_]/g, " ")
+          .replace(/\.pdf$/i, "")
+          .replace(/(sds|msds|safety.?data.?sheet|en.uk|english|uk)/gi, "")
+          .replace(/\s+/g, " ")
+          .trim();
+        const pdfKey = settings.apiKey?.trim();
+        if (!pdfKey) throw new Error("No API key - please add your Anthropic API key in Settings.");
+        const res = await fetch("https://round-feather-e5a3.u2cstevo.workers.dev", {
+          method: "POST",
+          headers: {"Content-Type": "application/json", "anthropic-version": "2023-06-01", "anthropic-beta": "web-search-2025-03-05", "x-api-key": pdfKey},
+          body: JSON.stringify({
+            model: "claude-haiku-4-5",
+            max_tokens: 700,
+            tools: [{type: "web_search_20250305", name: "web_search", max_uses: 1}],
+            messages: [{
+              role: "user",
+              content: `Find the UK Safety Data Sheet for "${productHint}" and extract its COSHH data. ${prompt}`
+            }]
+          })
+        });
+        if (!res.ok) throw new Error(`API error ${res.status}`);
+        const data = await res.json();
+        raw = data.content.filter(b => b.type === "text").map(b => b.text).join("");
+      }
+
+      const match = raw.match(/\{[\s\S]*\}/);
+      if (!match) throw new Error("Could not read SDS data - please fill in fields manually.");
+      const json = JSON.parse(match[0]);
+
+      setForm(f => ({
+        ...f,
+        ...json,
+        sdsData: dataUrl,       // keep the file we already stored
+        sdsFilename: file.name, // keep filename
+        sdsAttached: "Yes",     // mark as attached
+        assessDate: f.assessDate || today(),
+        reviewDate: f.reviewDate || nextYear(),
+      }));
+      setAiStatus({type:"success", msg:`v SDS data extracted from "${file.name}" - please review all fields before saving.`});
+
+    } catch(e) {
+      console.error("Upload error:", e);
+      // File is already stored even if extraction failed
+      setAiStatus({type:"error", msg:`File attached but could not extract data: ${e.message}. Please fill in fields manually.`});
+    }
+    setSdsLoading(false);
+  }, []);
+
+  const viewSDS = (p) => {
+    if (p.sdsUrl) { window.open(p.sdsUrl, "_blank"); return; }
+    if (p.sdsData) {
+      const w = window.open("", "_blank");
+      if (p.sdsData.startsWith("data:application/pdf") || p.sdsFilename?.toLowerCase().endsWith(".pdf")) {
+        w.document.write(`<html><body style="margin:0"><iframe src="${p.sdsData}" style="width:100%;height:100vh;border:none"></iframe></body></html>`);
+      } else {
+        w.document.write(`<html><body style="margin:0;background:#222;display:flex;justify-content:center;align-items:center;min-height:100vh"><img src="${p.sdsData}" style="max-width:100%;max-height:100vh;object-fit:contain"></body></html>`);
+      }
+      w.document.close();
+    }
+  };
+
+  // API key still saved locally only (never to cloud)
+  useEffect(() => { save("coshh_settings", {apiKey: settings.apiKey}); }, [settings.apiKey]);
+
+  const upd = (key) => (val) => setForm(f => ({...f, [key]:val}));
+  const updCB = (key) => (val) => setForm(f => ({...f, [key]:val}));
+  const toggleHazard = (key) => setForm(f => ({...f,
+    hazards: f.hazards.includes(key) ? f.hazards.filter(h=>h!==key) : [...f.hazards, key]
+  }));
+  const toggleRoute = (val) => setForm(f => ({...f,
+    routeOfEntry: f.routeOfEntry.includes(val) ? f.routeOfEntry.filter(r=>r!==val) : [...f.routeOfEntry, val]
+  }));
+
+  // -- AI SEARCH --
+  const runAiSearch = useCallback(async () => {
+    if (!aiQuery.trim()) return;
+
+    const JSON_SCHEMA = `{"productName":"","manufacturer":"","mfrAddress":"","mfrTel":"","sdsRef":"","hPhrases":"","hazards":[],"substanceForm":"","routeOfEntry":[],"wel":"","storage":"","useInstructions":"","disposal":"","firstAid":"","fire":"","sourceUrl":""}`;
+    const JSON_RULES = `sourceUrl: direct URL of the COSHH/SDS PDF or product page found
+hazards (include relevant): HealthHazard,AcuteToxicity,SeriousHealth,Oxidising,Explosive,Corrosive,Environmental,Flammable,GasesUnderPressure
+routeOfEntry (include relevant): Inhalation,Skin contact,Eye contact,Ingestion,Skin absorption
+substanceForm (pick one): Liquid,Solid,Gas / Vapour,Aerosol / Spray,Powder / Dust,Gel / Paste,Foam
+wel: Yes or No or Unknown
+Return ONLY the JSON object, no other text.`;
+
+    const apiKey = settings.apiKey?.trim();
+    if (!apiKey) throw new Error("No API key - please add your Anthropic API key in (settings)️ Settings first.");
+
+    const callAPI = async (messages, maxUses=1) => {
+      const res = await fetch("https://round-feather-e5a3.u2cstevo.workers.dev", {
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "anthropic-version":"2023-06-01",
+          "anthropic-beta":"web-search-2025-03-05",
+          "x-api-key": apiKey
+        },
+        body: JSON.stringify({
+          model:"claude-haiku-4-5",
+          max_tokens:800,
+          tools:[{type:"web_search_20250305", name:"web_search", max_uses:maxUses}],
+          messages
+        })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    };
+
+    const extractResult = (data) => {
+      // Pull any SDS PDF URL from search result blocks first
+      let foundUrl = "";
+      for (const block of data.content) {
+        if (block.type === "web_search_tool_result") {
+          for (const item of (block.content || [])) {
+            if (item.type === "web_search_result" && item.url) {
+              // Prefer direct PDF links
+              if (!foundUrl || item.url.includes(".pdf")) foundUrl = item.url;
+            }
+          }
+        }
+      }
+      const text = data.content.filter(b=>b.type==="text").map(b=>b.text).join("");
+      const match = text.match(/\{[\s\S]*\}/);
+      if (!match) throw new Error("Could not parse SDS data");
+      const json = JSON.parse(match[0]);
+      const sdsUrl = json.sourceUrl || foundUrl || "";
+      delete json.sourceUrl;
+      return {json, sdsUrl};
+    };
+
+    try {
+      // -- STAGE 1: Search Hampshire County Supplies first --
+      setAiStatus({type:"loading", msg:`🔍 Checking Hampshire County Supplies for "${aiQuery}"...`});
+
+      const stage1Prompt = `Search countysuppliesonline.hants.gov.uk for the cleaning product "${aiQuery}".
+If found, go to the product page and extract the COSHH Data Sheet PDF link (listed under Downloads on the page).
+Then read the PDF and extract all COSHH safety data.
+Return ONLY this JSON: ${JSON_SCHEMA}
+${JSON_RULES}
+For sourceUrl, use the direct PDF download URL from countysuppliesonline.hants.gov.uk if found (format: countysuppliesonline.hants.gov.uk/media/attachment/files/attachment/...)`;
+
+      let result = null;
+      let source = "";
+
+      try {
+        const data1 = await callAPI([{role:"user", content:stage1Prompt}], 2);
+        const extracted = extractResult(data1);
+        // Only use this result if we got a meaningful product name back
+        if (extracted.json.productName || extracted.json.manufacturer || extracted.sdsUrl) {
+          result = extracted;
+          source = "hcc"; // found on HCC County Supplies
+        }
+      } catch(e) {
+        // Stage 1 failed silently - proceed to stage 2
+      }
+
+      // -- STAGE 2: Fall back to general SDS search --
+      if (!result) {
+        setAiStatus({type:"loading", msg:`🔍 Not found on County Supplies - searching manufacturer SDS...`});
+
+        const stage2Prompt = `Find the official UK Safety Data Sheet (SDS/MSDS) for the cleaning product "${aiQuery}".
+Check manufacturer websites and SDS databases.
+Return ONLY this JSON: ${JSON_SCHEMA}
+${JSON_RULES}`;
+
+        const data2 = await callAPI([{role:"user", content:stage2Prompt}], 2);
+        result = extractResult(data2);
+        source = "general";
+      }
+
+      const {json, sdsUrl} = result;
+
+      setForm(f => ({...f, ...json,
+        assessDate: f.assessDate || today(),
+        reviewDate: f.reviewDate || nextYear(),
+        sdsUrl: sdsUrl || f.sdsUrl,
+        sdsAttached: sdsUrl ? "Online" : f.sdsAttached,
+      }));
+
+      const sourceLabel = source === "hcc"
+        ? `v Found on <strong>Hampshire County Supplies</strong>.`
+        : `v Found via manufacturer SDS.`;
+      const urlPart = sdsUrl
+        ? ` <a href="${sdsUrl}" target="_blank" style="color:${GREEN};font-weight:600">View source SDS &rarr;</a>`
+        : " Please review all fields before saving.";
+      setAiStatus({type:"success", msg: sourceLabel + urlPart, isHtml:true});
+
+    } catch(e) {
+      console.error("Search error:", e);
+      setAiStatus({type:"error", msg:`Search failed: ${e.message}. Please enter details manually or upload the SDS PDF.`});
+    }
+  }, [aiQuery]);
+
+  // -- SAVE TO SUPABASE --
+  const saveProduct = async () => {
+    if (!form.productName) { alert("Please enter a product name."); return; }
+    const record = {...form, id: editingId || Date.now().toString(), savedAt: new Date().toISOString()};
+    setSyncStatus("syncing");
+    try {
+      let sId = schoolId;
+      if (!sId) {
+        sId = await supa.upsertSchool(session.token, session.userId, {
+          school_name: settings.schoolName,
+          school_address: settings.schoolAddress,
+          assessor_name: settings.assessorName,
+          assessor_title: settings.assessorTitle,
+          manager_name: settings.managerName,
+          reminder_days: settings.reminderDays,
+        });
+        setSchoolId(sId);
+      }
+      const savedId = await supa.upsertAssessment(session.token, session.userId, sId, record);
+      const finalRecord = {...record, id: savedId};
+      setProducts(prev => {
+        const idx = prev.findIndex(p => p.id === record.id);
+        return idx >= 0 ? prev.map((p,i) => i===idx ? finalRecord : p) : [...prev, finalRecord];
+      });
+      setSyncStatus("saved");
+      setTimeout(() => setSyncStatus(null), 3000);
+    } catch(e) {
+      console.error("Save error:", e);
+      setSyncStatus("error");
+    }
+    setEditingId(null);
+    setTab("register");
+  };
+
+  const saveAndPrint = async () => {
+    if (!form.productName) { alert("Please enter a product name."); return; }
+    const record = {...form, id: editingId || Date.now().toString(), savedAt: new Date().toISOString()};
+    setSyncStatus("syncing");
+    try {
+      let sId = schoolId;
+      if (!sId) {
+        sId = await supa.upsertSchool(session.token, session.userId, {
+          school_name: settings.schoolName, school_address: settings.schoolAddress,
+          assessor_name: settings.assessorName, assessor_title: settings.assessorTitle,
+          manager_name: settings.managerName, reminder_days: settings.reminderDays,
+        });
+        setSchoolId(sId);
+      }
+      const savedId = await supa.upsertAssessment(session.token, session.userId, sId, record);
+      const finalRecord = {...record, id: savedId};
+      setProducts(prev => {
+        const idx = prev.findIndex(p => p.id === record.id);
+        return idx >= 0 ? prev.map((p,i) => i===idx ? finalRecord : p) : [...prev, finalRecord];
+      });
+      setPrintData(finalRecord);
+      setSyncStatus("saved");
+      setTimeout(() => setSyncStatus(null), 3000);
+    } catch(e) {
+      console.error("Save error:", e);
+      setPrintData(record);
+      setSyncStatus("error");
+    }
+    setTab("print");
+  };
+
+  const editProduct = (id) => {
+    const p = products.find(x => x.id === id);
+    if (!p) return;
+    setForm({...BLANK, ...p});
+    setEditingId(id);
+    setAiStatus(null);
+    setTab("form");
+  };
+
+  const newAssessment = () => {
+    setForm({...BLANK, assessDate:today(), reviewDate:nextYear(),
+      assessorName:settings.assessorName, assessorTitle:settings.assessorTitle,
+      managerName:settings.managerName});
+    setEditingId(null);
+    setAiStatus(null);
+    setTab("form");
+  };
+
+  // -- REGISTER --
+  const rd = parseInt(settings.reminderDays)||60;
+  const filtered = products.filter(p =>
+    (p.productName||"").toLowerCase().includes(search.toLowerCase()) ||
+    (p.manufacturer||"").toLowerCase().includes(search.toLowerCase())
+  );
+  const stats = products.reduce((a,p) => {
+    const s = statusInfo(p.reviewDate, rd).cls;
+    a[s] = (a[s]||0)+1; return a;
+  }, {});
+  const overdue = products.filter(p => statusInfo(p.reviewDate,rd).cls==="overdue");
+  const due = products.filter(p => statusInfo(p.reviewDate,rd).cls==="due");
+
+  // -----------------------------------------------------------------------------
+  return (
+    <div style={S.app}>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        * { box-sizing: border-box; margin:0; padding:0; }
+        body { font-family: 'DM Sans', system-ui, sans-serif; }
+        input:focus, select:focus, textarea:focus { outline:none; border-color:${GREEN} !important; box-shadow: 0 0 0 3px rgba(0,176,80,.12); }
+        @media print {
+          .no-print { display:none !important; }
+          .print-area { padding:6mm; }
+          @page { size: A4 landscape; margin: 8mm; }
+        }
+        ::-webkit-scrollbar { width:6px; } ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:3px; }
+      `}</style>
+
+      {/* HEADER */}
+      <header style={S.header}>
+        <div style={{display:"flex", alignItems:"center", gap:10}}>
+          <div style={{width:34,height:34,background:GREEN,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🛡️</div>
+          <div>
+            <div style={{color:"white",fontWeight:700,fontSize:15}}>COSHH Manager</div>
+            <div style={{color:"rgba(255,255,255,.5)",fontSize:11}}>Hampshire County Council Template</div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          {syncStatus==="syncing" && <div style={{background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.8)",padding:"4px 12px",borderRadius:20,fontSize:12,display:"flex",alignItems:"center",gap:6}}><Spinner />Saving...</div>}
+          {syncStatus==="saved" && <div style={{background:"rgba(0,176,80,.2)",color:"#86efac",padding:"4px 12px",borderRadius:20,fontSize:12}}>v Saved to cloud</div>}
+          {syncStatus==="error" && <div style={{background:"rgba(220,38,38,.2)",color:"#fca5a5",padding:"4px 12px",borderRadius:20,fontSize:12}}>(!) Save failed</div>}
+          <div style={{background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.8)",padding:"4px 14px",borderRadius:20,fontSize:12}}>
+            {settings.schoolName || session.email}
+          </div>
+          <button onClick={handleLogout} style={{background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.7)",border:"1px solid rgba(255,255,255,.2)",borderRadius:20,padding:"4px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+            Sign Out
+          </button>
+        </div>
+      </header>
+
+      {/* TABS */}
+      <div style={S.tabs} className="no-print">
+        {[["register","📋 Register"],["form","+ Assessment"],["print","🖨️ Print"],["settings","(settings)️ Settings"]].map(([id,label]) =>
+          <button key={id} style={S.tab(tab===id)} onClick={() => setTab(id)}>{label}</button>
+        )}
+      </div>
+
+      <div style={S.main}>
+        {dataLoading && (
+          <div style={{textAlign:"center",padding:"60px 20px",color:"#64748b"}}>
+            <div style={{fontSize:32,marginBottom:12}}>Cloud️</div>
+            <div style={{fontWeight:600,marginBottom:6}}>Loading your assessments...</div>
+            <div style={{fontSize:13}}>Fetching data from cloud storage</div>
+          </div>
+        )}
+        {!dataLoading && (<div>
+
+        {/* -- REGISTER -- */}
+        {tab === "register" && (
+          <div>
+            {(overdue.length > 0 || due.length > 0) && (
+              <div style={{background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:8,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:12}}>
+                <span style={{fontSize:20}}>(clock)</span>
+                <span style={{fontSize:13,color:"#92400e",flex:1}}>
+                  {overdue.length > 0 && <strong>{overdue.length} assessment{overdue.length>1?"s":""} overdue! </strong>}
+                  {due.length > 0 && `${due.length} assessment${due.length>1?"s":""} due for review within ${rd} days.`}
+                </span>
+              </div>
+            )}
+
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+              <div>
+                <h2 style={{fontSize:20,fontWeight:700,color:NAVY}}>COSHH Product Register</h2>
+                <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{products.length} product{products.length!==1?"s":""} on register</div>
+              </div>
+              <div style={{display:"flex",gap:10}}>
+                <button style={S.btn("ghost")} onClick={()=>exportToCSV(products)}
+                  disabled={products.length===0} title="Export register to CSV">
+                  v️ Export CSV
+                </button>
+                <button style={S.btn("green")} onClick={newAssessment}>+ New Assessment</button>
+              </div>
+            </div>
+
+            {/* Stats */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
+              {[
+                ["Total",products.length,"#0f172a"],
+                ["Current",stats.current||0,GREEN],
+                ["Due Soon",stats.due||0,"#d97706"],
+                ["Overdue",stats.overdue||0,"#dc2626"],
+              ].map(([l,v,c]) => (
+                <div key={l} style={{...S.card,padding:"14px 18px"}}>
+                  <div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:".05em",color:"#64748b",marginBottom:4}}>{l}</div>
+                  <div style={{fontSize:28,fontWeight:700,color:c,fontVariantNumeric:"tabular-nums"}}>{v}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Table */}
+            <div style={S.card}>
+              <div style={{padding:"12px 16px",borderBottom:"1px solid #e2e8f0"}}>
+                <input value={search} onChange={e=>setSearch(e.target.value)}
+                  placeholder="🔍  Search products..." style={{...S.input,maxWidth:400}} />
+              </div>
+              {filtered.length === 0 ? (
+                <div style={{textAlign:"center",padding:"48px 20px",color:"#64748b"}}>
+                  <div style={{fontSize:40,marginBottom:12}}>📋</div>
+                  <div style={{fontWeight:600,marginBottom:6}}>{products.length===0?"No assessments yet":"No results"}</div>
+                  {products.length===0 && <button style={S.btn("green")} onClick={newAssessment}>+ New Assessment</button>}
+                </div>
+              ) : (
+                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                  <thead>
+                    <tr style={{background:"#f8fafc"}}>
+                      {["Product","Manufacturer","Location","Stock","Assessed","Review Due","Status",""].map(h =>
+                        <th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,
+                          textTransform:"uppercase",letterSpacing:".04em",color:"#64748b",
+                          borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap"}}>{h}</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map(p => {
+                      const st = statusInfo(p.reviewDate, rd);
+                      return (
+                        <tr key={p.id} style={{borderBottom:"1px solid #f1f5f9"}}>
+                          <td style={{padding:"12px 14px"}}>
+                            <div style={{fontWeight:600,fontSize:13}}>{p.productName}</div>
+                            <div style={{fontSize:11,color:"#64748b"}}>{p.task}</div>
+                          </td>
+                          <td style={{padding:"12px 14px",fontSize:13}}>{p.manufacturer||"-"}</td>
+                          <td style={{padding:"12px 14px",fontSize:13}}>{p.location||"-"}</td>
+                          <td style={{padding:"12px 14px",fontSize:13,color:p.amountStored?"#334155":"#94a3b8"}}>{p.amountStored||"-"}</td>
+                          <td style={{padding:"12px 14px",fontSize:13}}>{fmtDate(p.assessDate)}</td>
+                          <td style={{padding:"12px 14px",fontSize:13}}>{fmtDate(p.reviewDate)}</td>
+                          <td style={{padding:"12px 14px"}}><span style={S.badge(st.cls)}>{st.label}</span></td>
+                          <td style={{padding:"12px 14px",whiteSpace:"nowrap"}}>
+                            <button onClick={()=>editProduct(p.id)} style={{...S.btn("ghost"),marginRight:4,fontSize:12,padding:"5px 10px"}}>Edit️ Edit</button>
+                            <button onClick={()=>{setPrintData(p);setTab("print");}} style={{...S.btn("ghost"),marginRight:4,fontSize:12,padding:"5px 10px"}}>🖨️</button>
+                            {(p.sdsData||p.sdsUrl) && (
+                              <button onClick={()=>viewSDS(p)} style={{...S.btn("ghost"),marginRight:4,fontSize:12,padding:"5px 10px",color:GREEN}} title="View original SDS">📄 SDS</button>
+                            )}
+                            <button onClick={()=>setDeleteTarget(p)} style={{...S.btn("ghost"),fontSize:12,padding:"5px 10px",color:"#dc2626"}}>🗑️</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* -- FORM -- */}
+        {tab === "form" && (
+          <div style={{display:"grid",gridTemplateColumns:"1fr 340px",gap:20,alignItems:"start"}}>
+            {/* Main form */}
+            <div style={S.card}>
+              <div style={S.cardHead}>
+                <div>
+                  <span style={{fontWeight:700,color:NAVY}}>{editingId ? "Edit Assessment" : "New COSHH Assessment"}</span>
+                  {!editingId && <div style={{fontSize:11,color:"#64748b",fontStyle:"italic",marginTop:2}}>Subject to Control of Substances Hazardous to Health Regulations</div>}
+                </div>
+              </div>
+              <div style={S.cardBody}>
+                <p style={{fontSize:13,color:"#334155",fontStyle:"italic",marginBottom:14,padding:"10px 12px",background:"#f1f5f9",borderLeft:"3px solid #00b050",borderRadius:"0 6px 6px 0"}}>
+                  This risk assessment is to be used to identify the risks and control measures required for hazardous substances but not Zoonosis or Biological agents.
+                </p>
+
+                <div style={S.secTitle}>Section 1 - Product & Company Details</div>
+                <div style={S.grid2}>
+                  <Field label="Name of Hazardous Substance *"><Input value={form.productName} onChange={upd("productName")} placeholder="e.g. Mr Muscle Window & Glass" /></Field>
+                  <Field label="Description of Process"><Input value={form.processDesc} onChange={upd("processDesc")} placeholder="e.g. Window cleaning" /></Field>
+                  <Field label="Date of Assessment"><Input type="date" value={form.assessDate} onChange={upd("assessDate")} /></Field>
+                  <Field label="Date of Review (Annual)"><Input type="date" value={form.reviewDate} onChange={upd("reviewDate")} /></Field>
+                  <Field label="Manufacturer *"><Input value={form.manufacturer} onChange={upd("manufacturer")} placeholder="e.g. SC Johnson Ltd" /></Field>
+                  <Field label="Manufacturer Tel No."><Input value={form.mfrTel} onChange={upd("mfrTel")} /></Field>
+                  <Field label="Manufacturer Address" span2><Input value={form.mfrAddress} onChange={upd("mfrAddress")} /></Field>
+                  <Field label="SDS Reference & Date"><Input value={form.sdsRef} onChange={upd("sdsRef")} placeholder="e.g. Version 1.0, Jan 2024" /></Field>
+                  <Field label="SDS Attached?">
+                    <Select value={form.sdsAttached} onChange={upd("sdsAttached")}
+                      options={[{v:"Yes",l:"Yes - attached"},{v:"No",l:"No - not yet obtained"},{v:"Online",l:"Online - link available"}]} />
+                  </Field>
+                  <Field label="SDS URL (optional - paste link to online SDS)" span2>
+                    <div style={{display:"flex",gap:8}}>
+                      <Input value={form.sdsUrl} onChange={upd("sdsUrl")} placeholder="https://..." />
+                      {form.sdsUrl && (
+                        <button type="button" onClick={()=>window.open(form.sdsUrl,"_blank")}
+                          style={{...S.btn("ghost"),whiteSpace:"nowrap",fontSize:12,padding:"6px 12px"}}>
+                          🔗 View
+                        </button>
+                      )}
+                    </div>
+                  </Field>
+                </div>
+
+                <div style={S.secTitle}>Section 2 - Location & Activity</div>
+                <div style={S.grid2}>
+                  <Field label="Location of Activity"><Input value={form.location} onChange={upd("location")} placeholder="e.g. Classrooms, Corridors" /></Field>
+                  <Field label="Task or Process"><Input value={form.task} onChange={upd("task")} placeholder="e.g. Surface cleaning" /></Field>
+                </div>
+
+                <div style={S.secTitle}>Section 3 - Hazard Classification</div>
+                <p style={{fontSize:12,color:"#64748b",marginBottom:10}}>Click to tick applicable GHS hazard pictograms:</p>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
+                  {HAZARDS.map(h => (
+                    <div key={h.key} onClick={()=>toggleHazard(h.key)}
+                      style={{border:`2px solid ${form.hazards.includes(h.key)?"#d97706":"#e2e8f0"}`,
+                        background:form.hazards.includes(h.key)?"#fef3c7":"white",
+                        borderRadius:8,padding:"8px 6px",textAlign:"center",cursor:"pointer",
+                        transition:"all .15s",userSelect:"none"}}>
+                      <img src={HIMGS[h.img]} alt={h.label} style={{width:40,height:40,objectFit:"contain",display:"block",margin:"0 auto 4px"}} />
+                      <div style={{fontSize:10,color:"#64748b",lineHeight:1.3,fontWeight:500}}>{h.label}</div>
+                    </div>
+                  ))}
+                </div>
+                <Field label="Please identify the Hazard (H) Phrase">
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <Input value={form.hPhrasesNone?"None required":form.hPhrases} onChange={upd("hPhrases")} disabled={form.hPhrasesNone} placeholder="e.g. H315 - Causes skin irritation." />
+                    <CB label="None" checked={form.hPhrasesNone} onChange={v=>setForm(f=>({...f,hPhrasesNone:v,hPhrases:v?"None required":""}))} />
+                  </div>
+                </Field>
+
+                <div style={S.secTitle}>Section 4 - About the Substance</div>
+                <p style={{fontSize:12,color:"#92400e",fontStyle:"italic",background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:6,padding:"6px 10px",marginBottom:12}}>
+                  Please note that the use of pesticides/herbicides, must be recorded on the Pesticide Record sheet.
+                </p>
+                <div style={S.grid3}>
+                  <Field label="In what form is the substance being used/supplied or created?">
+                    <Select value={form.substanceForm} onChange={upd("substanceForm")}
+                      options={["","Liquid","Solid","Gas / Vapour","Aerosol / Spray","Powder / Dust","Gel / Paste","Foam"]} />
+                  </Field>
+                  <Field label="Additional Preparation Required Prior to Use"><Input value={form.prepRequired} onChange={upd("prepRequired")} placeholder="e.g. None / Dilute" /></Field>
+                  <Field label="Dilution / Mix Ratio"><Input value={form.dilution} onChange={upd("dilution")} placeholder="e.g. RTU / 1:10" /></Field>
+                </div>
+                <div style={{...S.grid2,marginTop:14}}>
+                  <Field label="Likely Route(s) of Entry - tick all that apply">
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,padding:"8px 0"}}>
+                      {["Inhalation","Skin contact","Eye contact","Ingestion","Skin absorption","Injection"].map(r =>
+                        <CB key={r} label={r} checked={form.routeOfEntry.includes(r)} onChange={()=>toggleRoute(r)} />
+                      )}
+                    </div>
+                  </Field>
+                  <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                    <Field label="Does the substance have a workplace exposure limit?">
+                      <Select value={form.wel} onChange={upd("wel")} options={["No","Yes","Unknown"]} />
+                    </Field>
+                    <Field label="Is there the potential for it to be exceeded?">
+                      <Select value={form.welExceeded} onChange={upd("welExceeded")} options={["No","Yes","N/A"]} />
+                    </Field>
+                    <Field label="If the answer is 'Yes' to above question, have you contacted H&S advisor and recorded recommended actions?">
+                      <Select value={form.welHSContacted} onChange={upd("welHSContacted")} options={["N/A","Yes","No - action required"]} />
+                    </Field>
+                  </div>
+                </div>
+                <div style={{...S.grid3,marginTop:14}}>
+                  <Field label="Amount of substance supplied/stored on site"><Input value={form.amountStored} onChange={upd("amountStored")} placeholder="e.g. 2 x 750ml" /></Field>
+                  <Field label="Total amount used or generated per operation"><Input value={form.amountUsed} onChange={upd("amountUsed")} placeholder="e.g. 750ml" /></Field>
+                  <Field label="Method of application/generation"><Input value={form.method} onChange={upd("method")} placeholder="e.g. Spray and wipe" /></Field>
+                  <Field label="Duration of exposure per application/operation"><Input value={form.duration} onChange={upd("duration")} placeholder="e.g. <30 mins" /></Field>
+                  <Field label="Frequency of Exposure - how often is the exposure/product used?">
+                    <Select value={form.frequency} onChange={upd("frequency")}
+                      options={["","Daily","Weekly","Fortnightly","Monthly","Termly","As required"]} />
+                  </Field>
+                  <Field label="Substance used as a stand-alone product?">
+                    <Select value={form.standalone} onChange={upd("standalone")}
+                      options={["Yes","No"]} />
+                  </Field>
+                  <Field label="Used with a combination of substances?">
+                    <Select value={form.accumulated} onChange={upd("accumulated")}
+                      options={["No","Yes","N/A"]} />
+                  </Field>
+                  <Field label="Accumulation of effects of similar constituents considered?">
+                    <Select value={form.separateAssess} onChange={upd("separateAssess")}
+                      options={["No","Yes","N/A"]} />
+                  </Field>
+                  <Field label="Separate assessment in place for accumulated effects." span2>
+                    <div style={{display:"flex",flexDirection:"column",gap:8,paddingTop:4}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <input type="radio" id="separateAssessYes" name="separateAssessConfirm"
+                          checked={form.separateAssessConfirm===true}
+                          onChange={()=>setForm(f=>({...f,separateAssessConfirm:true}))}
+                          style={{width:16,height:16,accentColor:GREEN,cursor:"pointer"}} />
+                        <label htmlFor="separateAssessYes" style={{fontSize:13,cursor:"pointer"}}>Yes - separate assessment in place</label>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <input type="radio" id="separateAssessNo" name="separateAssessConfirm"
+                          checked={form.separateAssessConfirm===false}
+                          onChange={()=>setForm(f=>({...f,separateAssessConfirm:false}))}
+                          style={{width:16,height:16,accentColor:"#dc2626",cursor:"pointer"}} />
+                        <label htmlFor="separateAssessNo" style={{fontSize:13,cursor:"pointer",color:"#dc2626"}}>No - a separate assessment to be completed</label>
+                      </div>
+                    </div>
+                  </Field>
+                </div>
+
+                <div style={S.secTitle}>Section 5 - Controls Required</div>
+                <p style={{fontSize:12,color:"#334155",fontWeight:600,marginBottom:6}}>What controls are required for all activities identified in this assessment, and what has been implemented on the specific site?</p>
+                <p style={{fontSize:12,color:"#64748b",fontStyle:"italic",marginBottom:12}}>NB: Controls are identified within Safety Data Sheets, and guidance found in the Corporate PPE procedure for PPE and RPE.</p>
+
+                {/* Controls Table */}
+                <div style={{overflowX:"auto",marginBottom:14}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                    <thead>
+                      <tr style={{background:"#d4edda"}}>
+                        <th colSpan={2} style={{border:"1px solid #94a3b8",padding:"6px 8px",textAlign:"left",width:"28%"}}>Means of Protection</th>
+                        <th style={{border:"1px solid #94a3b8",padding:"6px 8px",textAlign:"center",width:"8%"}}>Control Required</th>
+                        <th style={{border:"1px solid #94a3b8",padding:"6px 8px",textAlign:"left"}}>Control Mechanism / Notes</th>
+                        <th style={{border:"1px solid #94a3b8",padding:"6px 8px",textAlign:"center",width:"10%"}}>Action No.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Ventilation */}
+                      {[
+                        ["ventGeneral","General ventilation","ventGeneralMech","ventGeneralAction"],
+                        ["ventLEV","Local Exhaust Ventilation (LEV)","ventLEVMech","ventLEVAction"],
+                        ["airMonitor","Air monitoring","airMonitorMech","airMonitorAction"],
+                        ["ventNA","Not applicable","",""],
+                      ].map(([key,label,mechKey,actKey],i) => (
+                        <tr key={key}>
+                          {i===0 && <td rowSpan={4} style={{border:"1px solid #94a3b8",padding:"6px 8px",fontWeight:600,verticalAlign:"middle",textAlign:"center"}}>Ventilation</td>}
+                          <td style={{border:"1px solid #94a3b8",padding:"6px 8px"}}>{label}</td>
+                          <td style={{border:"1px solid #94a3b8",padding:"4px 6px",textAlign:"center"}}>
+                            <input type="checkbox" checked={!!form[key]} onChange={e=>setForm(f=>({...f,[key]:e.target.checked}))} style={{width:15,height:15,accentColor:GREEN,cursor:"pointer"}} />
+                          </td>
+                          <td style={{border:"1px solid #94a3b8",padding:"4px 6px"}}>
+                            {mechKey ? <input value={form[mechKey]||""} onChange={e=>setForm(f=>({...f,[mechKey]:e.target.value}))} placeholder="Describe control mechanism..." style={{...S.input,padding:"3px 6px",fontSize:11}} /> : null}
+                          </td>
+                          <td style={{border:"1px solid #94a3b8",padding:"4px 6px"}}>
+                            {actKey ? <input value={form[actKey]||""} onChange={e=>setForm(f=>({...f,[actKey]:e.target.value}))} style={{...S.input,padding:"3px 6px",fontSize:11,textAlign:"center"}} /> : null}
+                          </td>
+                        </tr>
+                      ))}
+                      {/* Skin Protection */}
+                      {[
+                        ["preCreams","Pre-work creams","preCreamsDesc","preCreamsAction"],
+                        ["gloves","Hand protection / Gloves","glovesDesc","glovesAction"],
+                        ["apron","Body protection / Apron","apronDesc","apronAction"],
+                        ["footwear","Protective footwear","footwearType","footwearAction"],
+                        ["skinNA","Not applicable","",""],
+                      ].map(([key,label,mechKey,actKey],i) => (
+                        <tr key={key}>
+                          {i===0 && <td rowSpan={5} style={{border:"1px solid #94a3b8",padding:"6px 8px",fontWeight:600,verticalAlign:"middle",textAlign:"center"}}>Skin Protection</td>}
+                          <td style={{border:"1px solid #94a3b8",padding:"6px 8px"}}>{label}</td>
+                          <td style={{border:"1px solid #94a3b8",padding:"4px 6px",textAlign:"center"}}>
+                            <input type="checkbox" checked={!!form[key]} onChange={e=>setForm(f=>({...f,[key]:e.target.checked}))} style={{width:15,height:15,accentColor:GREEN,cursor:"pointer"}} />
+                          </td>
+                          <td style={{border:"1px solid #94a3b8",padding:"4px 6px"}}>
+                            {mechKey ? <input value={form[mechKey]||""} onChange={e=>setForm(f=>({...f,[mechKey]:e.target.value}))} placeholder={key==="footwear"?"Identify type...":"Describe control mechanism..."} style={{...S.input,padding:"3px 6px",fontSize:11}} /> : null}
+                          </td>
+                          <td style={{border:"1px solid #94a3b8",padding:"4px 6px"}}>
+                            {actKey ? <input value={form[actKey]||""} onChange={e=>setForm(f=>({...f,[actKey]:e.target.value}))} style={{...S.input,padding:"3px 6px",fontSize:11,textAlign:"center"}} /> : null}
+                          </td>
+                        </tr>
+                      ))}
+                      {/* Respiratory Protection */}
+                      {[
+                        ["halfMask","Half mask respirator","halfMaskDesc","halfMaskAction"],
+                        ["fullMask","Full face mask","fullMaskDesc","fullMaskAction"],
+                        ["dustMask","Disposable/dust mask","dustMaskDesc","dustMaskAction"],
+                        ["respNA","Not applicable","",""],
+                      ].map(([key,label,mechKey,actKey],i) => (
+                        <tr key={key}>
+                          {i===0 && <td rowSpan={4} style={{border:"1px solid #94a3b8",padding:"6px 8px",fontWeight:600,verticalAlign:"middle",textAlign:"center"}}>Respiratory Protection</td>}
+                          <td style={{border:"1px solid #94a3b8",padding:"6px 8px"}}>{label}</td>
+                          <td style={{border:"1px solid #94a3b8",padding:"4px 6px",textAlign:"center"}}>
+                            <input type="checkbox" checked={!!form[key]} onChange={e=>setForm(f=>({...f,[key]:e.target.checked}))} style={{width:15,height:15,accentColor:GREEN,cursor:"pointer"}} />
+                          </td>
+                          <td style={{border:"1px solid #94a3b8",padding:"4px 6px"}}>
+                            {mechKey ? <input value={form[mechKey]||""} onChange={e=>setForm(f=>({...f,[mechKey]:e.target.value}))} placeholder="Describe control mechanism..." style={{...S.input,padding:"3px 6px",fontSize:11}} /> : null}
+                          </td>
+                          <td style={{border:"1px solid #94a3b8",padding:"4px 6px"}}>
+                            {actKey ? <input value={form[actKey]||""} onChange={e=>setForm(f=>({...f,[actKey]:e.target.value}))} style={{...S.input,padding:"3px 6px",fontSize:11,textAlign:"center"}} /> : null}
+                          </td>
+                        </tr>
+                      ))}
+                      {/* Eye & Face Protection */}
+                      {[
+                        ["safetySpecs","Safety spectacles","safetySpecsDesc","safetySpecsAction"],
+                        ["goggles","Safety goggles","gogglesDesc","gogglesAction"],
+                        ["faceShield","Face shields","faceShieldDesc","faceShieldAction"],
+                        ["eyeNA","Not applicable","",""],
+                      ].map(([key,label,mechKey,actKey],i) => (
+                        <tr key={key}>
+                          {i===0 && <td rowSpan={4} style={{border:"1px solid #94a3b8",padding:"6px 8px",fontWeight:600,verticalAlign:"middle",textAlign:"center"}}>Eye & Face Protection</td>}
+                          <td style={{border:"1px solid #94a3b8",padding:"6px 8px"}}>{label}</td>
+                          <td style={{border:"1px solid #94a3b8",padding:"4px 6px",textAlign:"center"}}>
+                            <input type="checkbox" checked={!!form[key]} onChange={e=>setForm(f=>({...f,[key]:e.target.checked}))} style={{width:15,height:15,accentColor:GREEN,cursor:"pointer"}} />
+                          </td>
+                          <td style={{border:"1px solid #94a3b8",padding:"4px 6px"}}>
+                            {mechKey ? <input value={form[mechKey]||""} onChange={e=>setForm(f=>({...f,[mechKey]:e.target.value}))} placeholder="Is the protection appropriate for the type of substance?" style={{...S.input,padding:"3px 6px",fontSize:11}} /> : null}
+                          </td>
+                          <td style={{border:"1px solid #94a3b8",padding:"4px 6px"}}>
+                            {actKey ? <input value={form[actKey]||""} onChange={e=>setForm(f=>({...f,[actKey]:e.target.value}))} style={{...S.input,padding:"3px 6px",fontSize:11,textAlign:"center"}} /> : null}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Additional Controls - Health Surveillance */}
+                <div style={{marginTop:16}}>
+                  <div style={{fontWeight:700,fontSize:13,color:NAVY,marginBottom:8}}>Additional Controls</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:"8px 24px"}}>
+                    {[
+                      ["staffTrained","Staff trained in self-examination?"],
+                      ["healthSurv","Health Surveillance required?"],
+                      ["occupHealth","OCU Health Surveillance Program in place?"],
+                      ["sysMonitored","System in place to ensure programme is current and monitored."],
+                    ].map(([key,label]) => (
+                      <label key={key} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,cursor:"pointer",userSelect:"none"}}>
+                        <input type="checkbox" checked={!!form[key]}
+                          onChange={e=>setForm(f=>({...f,[key]:e.target.checked}))}
+                          style={{width:15,height:15,accentColor:GREEN,cursor:"pointer"}} />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={S.secTitle}>Section 6 - Safe Working Instructions for Operative</div>
+                <div style={{border:"1px solid #94a3b8",borderRadius:6,overflow:"hidden",marginBottom:14}}>
+                  <div style={{background:GREEN,color:"white",fontWeight:700,fontSize:13,textAlign:"center",padding:"8px 12px"}}>
+                    Safe Working Instructions for Operative
+                  </div>
+                  <div style={{background:"#f0fdf4",borderBottom:"1px solid #94a3b8",padding:"6px 10px",fontStyle:"italic",fontSize:12,color:"#334155",textAlign:"center"}}>
+                    This should be shared with those carrying out tasks and processes where hazardous substances are used or created.
+                  </div>
+                  {[
+                    ["Name of product/process", "productName", ""],
+                    ["Location of risk assessment and SDS", "locationOfSDS", "e.g. Filing cabinet in office / shared drive"],
+                    ["Storage Arrangements, including location, conditions, and any compatibility restraints:", "storage", "e.g. Store in locked, ventilated cleaning cupboard..."],
+                    ["Instructions for use/process, including dilution rates if applicable, application method, ventilation requirements.", "useInstructions", "e.g. Spray onto surface, wipe clean. Ensure ventilation."],
+                    ["What control measures are required: list specified PPE, mechanical controls such as LEV, barriers etc.", "controlMeasures", "e.g. Wear nitrile gloves, ensure adequate ventilation."],
+                    ["Clean up and Disposal Arrangements:", "disposal", "e.g. Dispose in accordance with local regulations."],
+                    ["First Aid Requirements:", "firstAid", "e.g. Eyes: rinse with water for 15 mins. Skin: wash with soap and water."],
+                    ["Fire Precautions:", "fire", "e.g. Not flammable. Use CO2 or dry chemical extinguisher."],
+                    ["Any further considerations:", "notes", ""],
+                  ].map(([label, key, placeholder]) => (
+                    <div key={key} style={{borderBottom:"1px solid #94a3b8"}}>
+                      <div style={{padding:"6px 10px",fontSize:12,color:"#334155",fontWeight:500}}>{label}</div>
+                      <div style={{padding:"4px 10px 8px"}}>
+                        <Textarea value={form[key]} onChange={upd(key)} placeholder={placeholder} rows={2} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{height:14}} />
+
+                <div style={S.secTitle}>Section 7 - Sign-Off</div>
+                <div style={S.grid2}>
+                  <Field label="Assessor Name"><Input value={form.assessorName} onChange={upd("assessorName")} /></Field>
+                  <Field label="Assessor Job Title"><Input value={form.assessorTitle} onChange={upd("assessorTitle")} placeholder="e.g. Site Manager / Caretaker" /></Field>
+                  <Field label="Responsible Manager Name"><Input value={form.managerName} onChange={upd("managerName")} /></Field>
+                  <Field label="Responsible Manager Job Title"><Input value={form.managerTitle} onChange={upd("managerTitle")} placeholder="e.g. Headteacher" /></Field>
+                </div>
+                <div style={{background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:6,padding:"10px 14px",marginTop:14,fontSize:12,color:"#92400e"}}>
+                  <strong>Important:</strong> Original risk assessments must be kept for <strong>40 years</strong>. On completion, print and place in your local health and safety folder.
+                </div>
+              </div>
+              <div style={{...S.cardHead,borderTop:"1px solid #e2e8f0",borderBottom:"none",justifyContent:"flex-end",gap:10,background:"#f8fafc"}}>
+                <button style={S.btn("ghost")} onClick={()=>{setForm({...BLANK,assessDate:today(),reviewDate:nextYear()});setAiStatus(null);}}>Clear</button>
+                <button style={S.btn("ghost")} onClick={saveAndPrint}>🖨️ Save & Print Preview</button>
+                <button style={S.btn("green")} onClick={saveProduct}>💾 Save Assessment</button>
+              </div>
+            </div>
+
+            {/* AI Panel */}
+            <div style={{display:"flex",flexDirection:"column",gap:16}}>
+              {/* Search */}
+              <div style={S.card}>
+                <div style={{background:NAVY,padding:"12px 16px",borderRadius:"10px 10px 0 0"}}>
+                  <div style={{color:"white",fontWeight:700,fontSize:14}}>🤖 AI Auto-Fill from SDS</div>
+                  <div style={{color:"rgba(255,255,255,.6)",fontSize:12,marginTop:2}}>Checks Hampshire County Supplies first, then manufacturer SDS</div>
+                </div>
+                <div style={{padding:16}}>
+                  {!settings.apiKey && (
+                    <div style={{background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:6,padding:"8px 12px",marginBottom:10,fontSize:12,color:"#92400e"}}>
+                      (!)️ Add your Anthropic API key in <strong>Settings</strong> to enable AI search.
+                    </div>
+                  )}
+                  <div style={{display:"flex",gap:8,marginBottom:8}}>
+                    <input value={aiQuery} onChange={e=>setAiQuery(e.target.value)}
+                      onKeyDown={e=>e.key==="Enter"&&runAiSearch()}
+                      placeholder="e.g. Dettol Antibacterial Spray"
+                      style={{...S.input,flex:1}} />
+                    <button onClick={runAiSearch} disabled={aiStatus?.type==="loading"}
+                      style={{...S.btn("green"),whiteSpace:"nowrap",opacity:aiStatus?.type==="loading"?.6:1}}>
+                      {aiStatus?.type==="loading" ? <Spinner /> : "Search"}
+                    </button>
+                  </div>
+                  {aiStatus?.type==="loading" && <div style={S.aiLoad}><Spinner />{aiStatus.msg}</div>}
+                  {aiStatus?.type==="success" && (
+                    <div style={S.aiBox}>
+                      {aiStatus.isHtml
+                        ? <span dangerouslySetInnerHTML={{__html: aiStatus.msg}} />
+                        : aiStatus.msg}
+                    </div>
+                  )}
+                  {aiStatus?.type==="error" && <div style={S.aiErr}>{aiStatus.msg}</div>}
+                </div>
+              </div>
+
+              {/* Upload */}
+              <div style={S.card}>
+                <div style={{background:NAVY,padding:"12px 16px",borderRadius:"10px 10px 0 0"}}>
+                  <div style={{color:"white",fontWeight:700,fontSize:14}}>📄 Attach SDS Document</div>
+                  <div style={{color:"rgba(255,255,255,.6)",fontSize:12,marginTop:2}}>Upload PDF or image - saved with assessment</div>
+                </div>
+                <div style={{padding:16}}>
+                  <div onClick={()=>document.getElementById("sdsUpload").click()}
+                    style={{border:"2px dashed #cbd5e1",borderRadius:8,padding:20,textAlign:"center",
+                      cursor:"pointer",background:"#f8fafc",transition:"all .15s"}}
+                    onMouseEnter={e=>{e.currentTarget.style.borderColor=GREEN;e.currentTarget.style.background="#e6f7ee"}}
+                    onMouseLeave={e=>{e.currentTarget.style.borderColor="#cbd5e1";e.currentTarget.style.background="#f8fafc"}}>
+                    <div style={{fontSize:28,marginBottom:6}}>{sdsLoading ? "(...)" : "📎"}</div>
+                    <div style={{fontSize:12,color:"#64748b"}}>
+                      {sdsLoading ? "Extracting SDS data..." : <><strong style={{color:GREEN}}>Click to upload</strong> or drag & drop<br/>PDF, PNG or JPG . auto-fills the form</>}
+                    </div>
+                  </div>
+                  <input id="sdsUpload" type="file" accept=".pdf,.png,.jpg,.jpeg" style={{display:"none"}}
+                    onChange={e=>{ if(e.target.files[0]) handleSdsUpload(e.target.files[0]); e.target.value=""; }} />
+                  {form.sdsData && (
+                    <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",
+                      background:"#e6f7ee",border:"1px solid #b3e6cc",borderRadius:8,marginTop:10}}>
+                      <span style={{fontSize:20}}>📄</span>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{form.sdsFilename||"SDS Document"}</div>
+                        <div style={{fontSize:11,color:"#64748b"}}>Attached . saved with assessment</div>
+                      </div>
+                      <button onClick={()=>viewSDS(form)} style={{...S.btn("ghost"),fontSize:11,padding:"4px 10px"}}>👁 View</button>
+                      <button onClick={()=>setForm(f=>({...f,sdsData:null,sdsFilename:""}))}
+                        style={{...S.btn("ghost"),fontSize:11,padding:"4px 8px",color:"#dc2626"}}>x</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Tips */}
+              <div style={S.card}>
+                <div style={{padding:"12px 16px",background:"#f8fafc",borderRadius:10}}>
+                  <div style={{fontWeight:600,fontSize:12,marginBottom:8}}>(i)️ Guidance</div>
+                  {["Always verify AI-populated fields before saving.","Review dates auto-set to 12 months from assessment.","Original risk assessments must be kept for 40 years.","Pesticide/herbicide use must be recorded separately."].map(t =>
+                    <div key={t} style={{fontSize:12,color:"#64748b",marginBottom:4}}>* {t}</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* -- PRINT -- */}
+        {tab === "print" && (
+          <div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}} className="no-print">
+              <h2 style={{fontSize:18,fontWeight:700,color:NAVY}}>Print Preview - A4 Landscape</h2>
+              <div style={{display:"flex",gap:10}}>
+                <button style={S.btn("ghost")} onClick={()=>setTab("form")}>&larr; Edit</button>
+                <button style={S.btn("green")} onClick={()=>window.print()}>🖨️ Print / Save PDF</button>
+              </div>
+            </div>
+            {printData ? <PrintPreview p={printData} school={settings.schoolName} addr={settings.schoolAddress} /> : (
+              <div style={{textAlign:"center",padding:60,color:"#64748b"}}>
+                No assessment loaded. Click "Save & Print Preview" from the form.
+              </div>
+            )}
+          </div>
+        )}
+
+        </div>)}
+
+        {/* -- SETTINGS -- */}
+        {tab === "settings" && (
+          <div style={{...S.card,maxWidth:540}}>
+            <div style={S.cardHead}><span style={{fontWeight:700,color:NAVY}}>(settings)️ Settings</span></div>
+            <div style={S.cardBody}>
+
+              {/* Subscription status */}
+              <div style={S.secTitle}>Subscription</div>
+              {(() => {
+                const isOwner = subPlan === "owner";
+                const isExpired = subExpiry && new Date(subExpiry) < new Date();
+                const isActive = subExpiry && new Date(subExpiry) >= new Date();
+                const bgColor = isOwner ? "#e6f7ee" : isExpired ? "#fee2e2" : isActive ? "#e6f7ee" : "#f1f5f9";
+                const borderColor = isOwner ? "#b3e6cc" : isExpired ? "#fca5a5" : isActive ? "#b3e6cc" : "#e2e8f0";
+                const planLabel = isOwner ? "🛡️ Owner Account" : subPlan === "trial" ? "🔄 Trial" : ("📋 " + (subPlan||"").charAt(0).toUpperCase() + (subPlan||"").slice(1) + " Plan");
+                const expiryLabel = isOwner ? "Full access - no expiry" : subExpiry ? ("Expires: " + new Date(subExpiry).toLocaleDateString("en-GB")) : "No expiry date set - contact your administrator";
+                return (
+                  <div style={{background:bgColor,border:"1px solid "+borderColor,borderRadius:8,padding:"12px 16px",marginBottom:14,fontSize:13}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div>
+                        <div style={{fontWeight:700,color:NAVY,marginBottom:2}}>{planLabel}</div>
+                        <div style={{color:"#64748b"}}>{expiryLabel}</div>
+                      </div>
+                      {isExpired && !isOwner && <span style={{background:"#dc2626",color:"white",padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>Expired</span>}
+                      {isActive && !isOwner && <span style={{background:GREEN,color:"white",padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>Active</span>}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div style={S.secTitle}>School Details</div>
+              <div style={{...S.grid2,marginBottom:14}}>
+                <Field label="School Name"><Input value={settings.schoolName} onChange={v=>setSettings(s=>({...s,schoolName:v}))} /></Field>
+                <Field label="School Address"><Input value={settings.schoolAddress} onChange={v=>setSettings(s=>({...s,schoolAddress:v}))} /></Field>
+                <Field label="Default Assessor Name"><Input value={settings.assessorName} onChange={v=>setSettings(s=>({...s,assessorName:v}))} /></Field>
+                <Field label="Default Assessor Title"><Input value={settings.assessorTitle} onChange={v=>setSettings(s=>({...s,assessorTitle:v}))} placeholder="e.g. Site Manager" /></Field>
+                <Field label="Default Manager Name"><Input value={settings.managerName} onChange={v=>setSettings(s=>({...s,managerName:v}))} /></Field>
+              </div>
+
+              <div style={S.secTitle}>AI Search - Anthropic API Key</div>
+              <div style={{fontSize:13,color:"#64748b",marginBottom:12,lineHeight:1.6}}>
+                Required for AI auto-fill and SDS search. Get a free key at <a href="https://console.anthropic.com" target="_blank" style={{color:"#00b050"}}>console.anthropic.com</a> &rarr; API Keys. Your key is stored locally in your browser only - never shared.
+              </div>
+              <div style={{...S.grid2,marginBottom:14}}>
+                <Field label="Anthropic API Key" span2>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <input
+                      type="password"
+                      value={settings.apiKey||""}
+                      onChange={e=>setSettings(s=>({...s,apiKey:e.target.value}))}
+                      placeholder="sk-ant-..."
+                      style={{...S.input,flex:1,fontFamily:"monospace",fontSize:13}}
+                    />
+                    {settings.apiKey && <span style={{fontSize:12,color:"#00b050",whiteSpace:"nowrap"}}>v Key saved</span>}
+                  </div>
+                </Field>
+              </div>
+
+              <div style={{...S.grid2,marginBottom:14}}>
+                <Field label="Reminder (days before review)">
+                  <Select value={String(settings.reminderDays)} onChange={v=>setSettings(s=>({...s,reminderDays:parseInt(v)}))}
+                    options={[{v:"30",l:"30 days"},{v:"60",l:"60 days"},{v:"90",l:"90 days"}]} />
+                </Field>
+              </div>
+
+              <div style={S.secTitle}>Annual Review Email Reminders</div>
+              <div style={{fontSize:13,color:"#64748b",marginBottom:12,lineHeight:1.6}}>
+                Enter your email address below. When you click <strong>Send Reminder Email</strong>, your email app will open with a pre-written reminder listing all overdue and due-soon assessments. Send it to yourself as a reminder, or CC your headteacher.
+              </div>
+              <div style={{...S.grid2,marginBottom:14}}>
+                <Field label="Reminder Email Address" span2>
+                  <Input type="email" value={settings.email||""} onChange={v=>setSettings(s=>({...s,email:v}))}
+                    placeholder="e.g. caretaker@oakwood.sch.uk" />
+                </Field>
+              </div>
+              {(() => {
+                const rd = parseInt(settings.reminderDays)||60;
+                const body = buildReminderEmail(products, settings, rd);
+                const overdue = products.filter(p => p.reviewDate && new Date(p.reviewDate) < new Date());
+                const due = products.filter(p => {
+                  if (!p.reviewDate) return false;
+                  const diff = Math.floor((new Date(p.reviewDate)-new Date())/86400000);
+                  return diff >= 0 && diff <= rd;
+                });
+                const total = overdue.length + due.length;
+                const subject = encodeURIComponent(`COSHH Review Reminder - ${settings.schoolName||"School"} - ${new Date().toLocaleDateString("en-GB")}`);
+                const bodyEnc = encodeURIComponent(body||"No assessments currently due.");
+                const mailtoHref = `mailto:${settings.email||""}?subject=${subject}&body=${bodyEnc}`;
+                return (
+                  <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8,flexWrap:"wrap"}}>
+                    <a href={mailtoHref}
+                      style={{...S.btn("green"),textDecoration:"none",display:"inline-flex",alignItems:"center",gap:6,
+                        opacity:settings.email?1:0.5,pointerEvents:settings.email?"auto":"none"}}
+                      onClick={()=>setEmailStatus(total>0?"sent":"nothing-due")}>
+                      Email️ Send Reminder Email
+                    </a>
+                    {!settings.email && <span style={{fontSize:12,color:"#dc2626"}}>Enter an email address above first</span>}
+                    {settings.email && total===0 && <span style={{fontSize:12,color:GREEN}}>v No assessments currently overdue or due soon</span>}
+                    {settings.email && total>0 && <span style={{fontSize:12,color:"#d97706"}}>
+                      (!)️ {overdue.length>0&&`${overdue.length} overdue`}{overdue.length>0&&due.length>0&&", "}{due.length>0&&`${due.length} due soon`}
+                    </span>}
+                  </div>
+                );
+              })()}
+              {emailStatus==="sent" && (
+                <div style={{...S.aiBox,fontSize:12,marginBottom:12}}>
+                  v Your email app has opened with the reminder. Check your drafts if it did not send automatically.
+                </div>
+              )}
+              <div style={{fontSize:12,color:"#94a3b8",marginBottom:4}}>
+                💡 Tip: Set a calendar reminder to click this button once a year (or once a term) to stay on top of reviews.
+              </div>
+
+              <div style={S.secTitle}>Export Product Register</div>
+              <div style={{fontSize:13,color:"#64748b",marginBottom:12,lineHeight:1.6}}>
+                Download the full COSHH product register as a CSV spreadsheet. Opens in Excel or Google Sheets.
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:12}}>
+                <button style={S.btn("green")} onClick={()=>exportToCSV(products)}
+                  disabled={products.length===0}>
+                  v️ Export Register to CSV
+                </button>
+                {products.length===0
+                  ? <span style={{fontSize:12,color:"#94a3b8"}}>No products in register yet</span>
+                  : <span style={{fontSize:12,color:"#64748b"}}>{products.length} product{products.length!==1?"s":""} will be exported</span>}
+              </div>
+            </div>
+            <div style={{...S.cardHead,borderTop:"1px solid #e2e8f0",borderBottom:"none",justifyContent:"space-between",background:"#f8fafc"}}>
+              <button style={S.btn("green")} onClick={async ()=>{
+                setSyncStatus("syncing");
+                try {
+                  const sId = await supa.upsertSchool(session.token, session.userId, {
+                    school_name: settings.schoolName,
+                    school_address: settings.schoolAddress,
+                    assessor_name: settings.assessorName,
+                    assessor_title: settings.assessorTitle,
+                    manager_name: settings.managerName,
+                    reminder_days: settings.reminderDays,
+                  });
+                  setSchoolId(sId);
+                  setSyncStatus("saved");
+                  setTimeout(() => setSyncStatus(null), 3000);
+                } catch(e) { setSyncStatus("error"); }
+              }}>💾 Save Settings</button>
+              <span style={{fontSize:12,color:"#64748b"}}>API key is stored locally in your browser only</span>
+            </div>
+          </div>
+        )}
+        {/* DELETE MODAL */}
+        {deleteTarget && (
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+            <div style={{...S.card,maxWidth:400,width:"100%",padding:24}}>
+              <div style={{fontWeight:700,fontSize:16,color:NAVY,marginBottom:10}}>Delete Assessment?</div>
+              <div style={{fontSize:14,color:"#334155",marginBottom:20}}>This will permanently remove <strong>{deleteTarget.productName}</strong>. This cannot be undone.</div>
+              <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                <button style={S.btn("ghost")} onClick={()=>setDeleteTarget(null)}>Cancel</button>
+                <button style={S.btn("danger")} onClick={async ()=>{
+                  try {
+                    await supa.deleteAssessment(session.token, deleteTarget.id);
+                  } catch(e) { console.error("Delete error:", e); }
+                  setProducts(prev=>prev.filter(p=>p.id!==deleteTarget.id));
+                  setDeleteTarget(null);
+                }}>Delete</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+  );
+}
+
+// --- PRINT PREVIEW ------------------------------------------------------------
+function PrintPreview({p, school, addr}) {
+  const chk = v => v ? "\u2611" : "\u2610";
+  const c = p || {};
+  const ctrl = c.controls || c; // support both formats
+
+  const hazCells = HAZARDS.map(h => {
+    const sel = (c.hazards||[]).includes(h.key);
+    return (
+      <div key={h.key} style={{display:"flex",flexDirection:"column",alignItems:"center",
+        border:sel?"2px solid #c00":"1px solid #ccc",padding:3,width:76,
+        background:sel?"#fff8f0":"white",opacity:sel?1:.35}}>
+        <img src={HIMGS[h.img]} alt={h.label} style={{width:26,height:26,objectFit:"contain"}} />
+        <div style={{fontSize:"5.5pt",textAlign:"center",lineHeight:1.2,marginTop:2}}>{h.label}</div>
+        <div style={{fontSize:"9pt"}}>{sel?"[X]":"[ ]"}</div>
+      </div>
+    );
+  });
+
+  const td = {border:"1px solid #666",padding:"3px 5px",verticalAlign:"top",fontSize:"7.5pt"};
+  const th = {...td,background:"#d4edda",fontWeight:"bold",fontSize:"7pt"};
+
+  return (
+    <div className="print-area" style={{background:"white",maxWidth:1060,margin:"0 auto",
+      padding:"16px 20px",boxShadow:"0 4px 24px rgba(0,0,0,.12)",fontFamily:"Arial,sans-serif",
+      fontSize:"8pt",color:"#000",lineHeight:1.3}}>
+
+      <div style={{textAlign:"center",fontWeight:"bold",fontSize:"12pt",borderBottom:"2px solid #000",paddingBottom:6,marginBottom:4}}>
+        COSHH Assessment Form - Subject to Control of Substances Hazardous to Health Regulations
+      </div>
+      <div style={{textAlign:"center",fontSize:"7.5pt",color:"#333",marginBottom:8,fontStyle:"italic"}}>
+        {school && <strong>{school}</strong>}{addr && ` - ${addr}`}<br/>
+        This risk assessment is to be used to identify risks and control measures for hazardous substances but not Zoonosis or Biological agents.
+      </div>
+      <div style={{background:"#fff8dc",border:"1px solid #e6c800",padding:"3px 6px",fontSize:"6.5pt",fontStyle:"italic",marginBottom:6}}>
+        Note: The use of pesticides/herbicides must be recorded on the Pesticide Record sheet.
+      </div>
+
+      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:4}}>
+        <tbody>
+          <tr>
+            <th style={th}>Name of Hazardous Substance / Description of Process</th>
+            <th style={th}>Location</th><th style={th}>Task / Process</th>
+            <th style={th}>Date of Assessment</th><th style={th}>Date of Review</th>
+          </tr>
+          <tr>
+            <td style={td}><strong>{c.productName}</strong>{c.processDesc&&<><br/><span style={{fontSize:"7pt",color:"#555"}}>{c.processDesc}</span></>}</td>
+            <td style={td}>{c.location}</td><td style={td}>{c.task}</td>
+            <td style={td}>{c.assessDate ? new Date(c.assessDate).toLocaleDateString("en-GB") : "-"}</td>
+            <td style={td}>{c.reviewDate ? new Date(c.reviewDate).toLocaleDateString("en-GB") : "-"}</td>
+          </tr>
+          <tr>
+            <th style={th}>Manufacturer</th><th style={{...th}} colSpan={2}>Address</th>
+            <th style={th}>Tel</th><th style={th}>SDS Ref & Date</th>
+          </tr>
+          <tr>
+            <td style={td}>{c.manufacturer}</td><td style={td} colSpan={2}>{c.mfrAddress}</td>
+            <td style={td}>{c.mfrTel}</td>
+            <td style={td}>
+              {c.sdsRef}<br/>
+              <span style={{fontSize:"6.5pt"}}>SDS Attached: {c.sdsAttached||"Yes"}</span>
+              {c.sdsUrl && <><br/><span style={{fontSize:"6pt",color:"#1a5c32"}}>URL: {c.sdsUrl}</span></>}
+              {c.sdsFilename && <><br/><span style={{fontSize:"6pt",color:"#16a34a"}}>File: {c.sdsFilename}</span></>}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style={{background:"#1a5c32",color:"white",fontWeight:"bold",fontSize:"7.5pt",padding:"3px 6px",marginBottom:0}}>
+        HAZARD CLASSIFICATION - Tick Appropriate Boxes
+      </div>
+      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:4}}>
+        <tbody><tr>
+          <td style={{...td,width:"62%"}}>
+            <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:4}}>{hazCells}</div>
+            <div><strong style={{fontSize:"6.5pt"}}>H Phrases: </strong><span style={{fontSize:"7.5pt"}}>{c.hPhrases||"-"}</span></div>
+          </td>
+          <td style={td}>
+            <strong style={{fontSize:"6.5pt",display:"block",marginBottom:4}}>About the Substance</strong>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:"7pt"}}>
+              <tbody>
+                <tr><td style={{padding:2}}><strong>Form:</strong> {c.substanceForm||"-"}</td><td style={{padding:2}}><strong>Dilution:</strong> {c.dilution||"-"}</td></tr>
+                <tr><td colSpan={2} style={{padding:2}}><strong>Route of Entry:</strong> {(c.routeOfEntry||[]).join(", ")||"-"}</td></tr>
+                <tr><td style={{padding:2}}><strong>WEL?</strong> {c.wel||"-"}</td><td style={{padding:2}}><strong>Exceeded?</strong> {c.welExceeded||"-"}</td></tr>
+                <tr><td colSpan={2} style={{padding:2}}><strong>H&S advisor contacted?</strong> {c.welHSContacted||"N/A"}</td></tr>
+                <tr><td colSpan={2} style={{padding:2}}><strong>Amount stored:</strong> {c.amountStored||"-"} | <strong>Per op:</strong> {c.amountUsed||"-"}</td></tr>
+                <tr><td style={{padding:2}}><strong>Duration:</strong> {c.duration||"-"}</td><td style={{padding:2}}><strong>Frequency:</strong> {c.frequency||"-"}</td></tr>
+              </tbody>
+            </table>
+          </td>
+        </tr></tbody>
+      </table>
+
+      <div style={{background:"#1a5c32",color:"white",fontWeight:"bold",fontSize:"7.5pt",padding:"3px 6px"}}>
+        CONTROLS REQUIRED - <span style={{fontWeight:"normal"}}>NB: Controls are identified within Safety Data Sheets and guidance found in the Corporate PPE procedure.</span>
+      </div>
+      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:4}}>
+        <tbody>
+          <tr>
+            <td style={{...td,width:"12%"}}><strong>Ventilation</strong></td>
+            <td style={td}>{chk(c.ventGeneral)} General &nbsp; {chk(c.ventLEV)} LEV &nbsp; {chk(c.airMonitor)} Air Monitor &nbsp; {chk(c.ventNA)} N/A</td>
+            <td style={{...td,width:"12%"}}><strong>Skin Protection</strong></td>
+            <td style={td}>{chk(c.preCreams)} Pre-work Creams &nbsp; {chk(c.gloves)} Gloves &nbsp; {chk(c.apron)} Apron &nbsp; {chk(c.footwear)} Footwear{c.footwearType&&`: ${c.footwearType}`} &nbsp; {chk(c.skinNA)} N/A</td>
+          </tr>
+          <tr>
+            <td style={td}><strong>Respiratory</strong></td>
+            <td style={td}>{chk(c.halfMask)} Half Mask &nbsp; {chk(c.fullMask)} Full Mask &nbsp; {chk(c.dustMask)} Dust Mask &nbsp; {chk(c.respNA)} N/A {c.protFactor&&`- RPF: ${c.protFactor}`}</td>
+            <td style={td}><strong>Eye & Face</strong></td>
+            <td style={td}>{chk(c.safetySpecs)} Spectacles &nbsp; {chk(c.goggles)} Goggles &nbsp; {chk(c.faceShield)} Face Shield &nbsp; {chk(c.eyeNA)} N/A</td>
+          </tr>
+          <tr>
+            <td style={td} colSpan={2}><strong>Health Surveillance: </strong>{chk(c.staffTrained)} Self-exam &nbsp; {chk(c.healthSurv)} Surveillance req. &nbsp; {chk(c.occupHealth)} OCU programme &nbsp; {chk(c.sysMonitored)} System monitored</td>
+            <td style={td} colSpan={2}>
+                <strong>Stand-alone product?</strong> {c.standalone||"-"} &nbsp;|&nbsp;
+                <strong>Used in combination?</strong> {c.accumulated||"-"} &nbsp;|&nbsp;
+                <strong>Accumulation considered?</strong> {c.separateAssess||"-"} &nbsp;|&nbsp;
+                <strong>Separate assessment in place?</strong> {c.separateAssessConfirm?"Yes":"No"}
+              </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style={{background:"#1a5c32",color:"white",fontWeight:"bold",fontSize:"7.5pt",padding:"3px 6px"}}>
+        SAFE WORKING INSTRUCTIONS FOR OPERATIVE - <span style={{fontWeight:"normal"}}>Share with all persons carrying out tasks where hazardous substances are used.</span>
+      </div>
+      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:4}}>
+        <tbody>
+          <tr>
+            <th style={{...th,width:"17%"}}>Storage (location, conditions, compatibility)</th>
+            <th style={{...th,width:"22%"}}>Instructions for Use (dilution, application, ventilation)</th>
+            <th style={{...th,width:"15%"}}>Control Measures (PPE, LEV, barriers)</th>
+            <th style={{...th,width:"15%"}}>Clean Up & Disposal</th>
+            <th style={{...th,width:"16%"}}>First Aid</th>
+            <th style={{...th,width:"15%"}}>Fire Precautions</th>
+          </tr>
+          <tr style={{verticalAlign:"top"}}>
+            <td style={{...td,minHeight:40}}>{c.storage}</td>
+            <td style={td}>{c.useInstructions}</td>
+            <td style={td}>{c.controlMeasures}</td>
+            <td style={td}>{c.disposal}</td>
+            <td style={td}>{c.firstAid}</td>
+            <td style={td}>{c.fire}</td>
+          </tr>
+          {c.notes && <><tr><th style={{...th}} colSpan={6}>Further Considerations</th></tr>
+          <tr><td style={td} colSpan={6}>{c.notes}</td></tr></>}
+        </tbody>
+      </table>
+
+      <div style={{background:"#1a5c32",color:"white",fontWeight:"bold",fontSize:"7.5pt",padding:"3px 6px"}}>SIGN-OFF</div>
+      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:6}}>
+        <tbody>
+          <tr>
+            <td style={{...td,width:"44%",fontSize:"7pt"}}>As the <strong>Assessor</strong> I have considered the current, and any additional controls. I consider this activity to have been reduced to a level that is acceptable or as low as is reasonably practicable.</td>
+            <th style={th}>Name / Job Title</th><th style={th}>Signed</th><th style={th}>Date</th>
+          </tr>
+          <tr>
+            <td style={{...td,fontSize:"7pt",fontStyle:"italic"}}>Assessor</td>
+            <td style={{...td,height:32}}>{c.assessorName}{c.assessorTitle&&` / ${c.assessorTitle}`}</td>
+            <td style={{...td,height:32,borderBottom:"1px solid #333"}}>&nbsp;</td>
+            <td style={{...td,height:32}}>{c.assessDate ? new Date(c.assessDate).toLocaleDateString("en-GB") : ""}</td>
+          </tr>
+          <tr>
+            <td style={{...td,fontSize:"7pt"}}>As the <strong>Responsible Manager</strong>, I can confirm that the information provided is relevant to the individual substance for the purpose of its use on this occasion. I have informed all other persons using this substance of the control measures in place.</td>
+            <th style={th}>Name / Job Title</th><th style={th}>Signed</th><th style={th}>Date</th>
+          </tr>
+          <tr>
+            <td style={{...td,fontSize:"7pt",fontStyle:"italic"}}>Responsible Manager</td>
+            <td style={{...td,height:32}}>{c.managerName}{c.managerTitle&&` / ${c.managerTitle}`}</td>
+            <td style={{...td,height:32,borderBottom:"1px solid #333"}}>&nbsp;</td>
+            <td style={{...td,height:32,borderBottom:"1px solid #333"}}>&nbsp;</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style={{fontSize:"6pt",color:"#555",borderTop:"1px solid #ccc",paddingTop:4}}>
+        <strong>Original risk assessments must be kept for a period of 40 years.</strong> On completion a hard copy should be printed off and placed in your local/site health and safety folder and hazards, risks and control measures implemented should be communicated to all individuals identified at risk within this risk assessment. | Generated: {new Date().toLocaleDateString("en-GB")} | {school}
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(React.createElement(App));
+  </script>
+</body>
+</html>
