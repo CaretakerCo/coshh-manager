@@ -173,7 +173,7 @@ function fmtDate(d) { if(!d) return "-"; try { return new Date(d).toLocaleDateSt
 function statusInfo(reviewDate, days) {
   if (!reviewDate) return {label:"Unknown", cls:"due"};
   const diff = Math.floor((new Date(reviewDate)-new Date())/86400000);
-  if (diff < 0) return {label:"(!)️ Overdue", cls:"overdue"};
+  if (diff < 0) return {label:"(!) Overdue", cls:"overdue"};
   if (diff <= days) return {label:"(clock) Due Soon", cls:"due"};
   return {label:"v Current", cls:"current"};
 }
@@ -412,7 +412,7 @@ function LoginScreen({ onLogin }) {
   return (
     <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{textAlign:"center",marginBottom:32}}>
-        <div style={{width:56,height:56,background:NAVY,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 12px"}}>🛡️</div>
+        <div style={{width:56,height:56,background:NAVY,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 12px"}}>🛡</div>
         <div style={{fontSize:22,fontWeight:800,color:NAVY}}>COSHH Manager</div>
         <div style={{fontSize:13,color:"#64748b",marginTop:4}}>Hampshire County Council Template</div>
       </div>
@@ -726,7 +726,7 @@ wel: Yes or No or Unknown
 Return ONLY the JSON object, no other text.`;
 
     const apiKey = settings.apiKey?.trim();
-    if (!apiKey) throw new Error("No API key - please add your Anthropic API key in (settings)️ Settings first.");
+    if (!apiKey) throw new Error("No API key - please add your Anthropic API key in (settings) Settings first.");
 
     const callAPI = async (messages, maxUses=1) => {
       const res = await fetch("https://round-feather-e5a3.u2cstevo.workers.dev", {
@@ -948,7 +948,7 @@ ${JSON_RULES}`;
       {/* HEADER */}
       <header style={S.header}>
         <div style={{display:"flex", alignItems:"center", gap:10}}>
-          <div style={{width:34,height:34,background:GREEN,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🛡️</div>
+          <div style={{width:34,height:34,background:GREEN,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🛡</div>
           <div>
             <div style={{color:"white",fontWeight:700,fontSize:15}}>COSHH Manager</div>
             <div style={{color:"rgba(255,255,255,.5)",fontSize:11}}>Hampshire County Council Template</div>
@@ -969,7 +969,7 @@ ${JSON_RULES}`;
 
       {/* TABS */}
       <div style={S.tabs} className="no-print">
-        {[["register","📋 Register"],["form","+ Assessment"],["print","🖨️ Print"],["settings","(settings)️ Settings"]].map(([id,label]) =>
+        {[["register","📋 Register"],["form","+ Assessment"],["print","🖨 Print"],["settings","(settings) Settings"]].map(([id,label]) =>
           <button key={id} style={S.tab(tab===id)} onClick={() => setTab(id)}>{label}</button>
         )}
       </div>
@@ -977,7 +977,7 @@ ${JSON_RULES}`;
       <div style={S.main}>
         {dataLoading && (
           <div style={{textAlign:"center",padding:"60px 20px",color:"#64748b"}}>
-            <div style={{fontSize:32,marginBottom:12}}>Cloud️</div>
+            <div style={{fontSize:32,marginBottom:12}}>Cloud</div>
             <div style={{fontWeight:600,marginBottom:6}}>Loading your assessments...</div>
             <div style={{fontSize:13}}>Fetching data from cloud storage</div>
           </div>
@@ -1005,7 +1005,7 @@ ${JSON_RULES}`;
               <div style={{display:"flex",gap:10}}>
                 <button style={S.btn("ghost")} onClick={()=>exportToCSV(products)}
                   disabled={products.length===0} title="Export register to CSV">
-                  v️ Export CSV
+                  v Export CSV
                 </button>
                 <button style={S.btn("green")} onClick={newAssessment}>+ New Assessment</button>
               </div>
@@ -1065,12 +1065,12 @@ ${JSON_RULES}`;
                           <td style={{padding:"12px 14px",fontSize:13}}>{fmtDate(p.reviewDate)}</td>
                           <td style={{padding:"12px 14px"}}><span style={S.badge(st.cls)}>{st.label}</span></td>
                           <td style={{padding:"12px 14px",whiteSpace:"nowrap"}}>
-                            <button onClick={()=>editProduct(p.id)} style={{...S.btn("ghost"),marginRight:4,fontSize:12,padding:"5px 10px"}}>Edit️ Edit</button>
-                            <button onClick={()=>{setPrintData(p);setTab("print");}} style={{...S.btn("ghost"),marginRight:4,fontSize:12,padding:"5px 10px"}}>🖨️</button>
+                            <button onClick={()=>editProduct(p.id)} style={{...S.btn("ghost"),marginRight:4,fontSize:12,padding:"5px 10px"}}>Edit Edit</button>
+                            <button onClick={()=>{setPrintData(p);setTab("print");}} style={{...S.btn("ghost"),marginRight:4,fontSize:12,padding:"5px 10px"}}>🖨</button>
                             {(p.sdsData||p.sdsUrl) && (
                               <button onClick={()=>viewSDS(p)} style={{...S.btn("ghost"),marginRight:4,fontSize:12,padding:"5px 10px",color:GREEN}} title="View original SDS">📄 SDS</button>
                             )}
-                            <button onClick={()=>setDeleteTarget(p)} style={{...S.btn("ghost"),fontSize:12,padding:"5px 10px",color:"#dc2626"}}>🗑️</button>
+                            <button onClick={()=>setDeleteTarget(p)} style={{...S.btn("ghost"),fontSize:12,padding:"5px 10px",color:"#dc2626"}}>🗑</button>
                           </td>
                         </tr>
                       );
@@ -1392,7 +1392,7 @@ ${JSON_RULES}`;
               </div>
               <div style={{...S.cardHead,borderTop:"1px solid #e2e8f0",borderBottom:"none",justifyContent:"flex-end",gap:10,background:"#f8fafc"}}>
                 <button style={S.btn("ghost")} onClick={()=>{setForm({...BLANK,assessDate:today(),reviewDate:nextYear()});setAiStatus(null);}}>Clear</button>
-                <button style={S.btn("ghost")} onClick={saveAndPrint}>🖨️ Save & Print Preview</button>
+                <button style={S.btn("ghost")} onClick={saveAndPrint}>🖨 Save & Print Preview</button>
                 <button style={S.btn("green")} onClick={saveProduct}>💾 Save Assessment</button>
               </div>
             </div>
@@ -1408,7 +1408,7 @@ ${JSON_RULES}`;
                 <div style={{padding:16}}>
                   {!settings.apiKey && (
                     <div style={{background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:6,padding:"8px 12px",marginBottom:10,fontSize:12,color:"#92400e"}}>
-                      (!)️ Add your Anthropic API key in <strong>Settings</strong> to enable AI search.
+                      (!) Add your Anthropic API key in <strong>Settings</strong> to enable AI search.
                     </div>
                   )}
                   <div style={{display:"flex",gap:8,marginBottom:8}}>
@@ -1471,7 +1471,7 @@ ${JSON_RULES}`;
               {/* Tips */}
               <div style={S.card}>
                 <div style={{padding:"12px 16px",background:"#f8fafc",borderRadius:10}}>
-                  <div style={{fontWeight:600,fontSize:12,marginBottom:8}}>(i)️ Guidance</div>
+                  <div style={{fontWeight:600,fontSize:12,marginBottom:8}}>(i) Guidance</div>
                   {["Always verify AI-populated fields before saving.","Review dates auto-set to 12 months from assessment.","Original risk assessments must be kept for 40 years.","Pesticide/herbicide use must be recorded separately."].map(t =>
                     <div key={t} style={{fontSize:12,color:"#64748b",marginBottom:4}}>* {t}</div>
                   )}
@@ -1488,7 +1488,7 @@ ${JSON_RULES}`;
               <h2 style={{fontSize:18,fontWeight:700,color:NAVY}}>Print Preview - A4 Landscape</h2>
               <div style={{display:"flex",gap:10}}>
                 <button style={S.btn("ghost")} onClick={()=>setTab("form")}> Back</button>
-                <button style={S.btn("green")} onClick={()=>window.print()}>🖨️ Print / Save PDF</button>
+                <button style={S.btn("green")} onClick={()=>window.print()}>🖨 Print / Save PDF</button>
               </div>
             </div>
             {printData ? <PrintPreview p={printData} school={settings.schoolName} addr={settings.schoolAddress} /> : (
@@ -1504,7 +1504,7 @@ ${JSON_RULES}`;
         {/* -- SETTINGS -- */}
         {tab === "settings" && (
           <div style={{...S.card,maxWidth:540}}>
-            <div style={S.cardHead}><span style={{fontWeight:700,color:NAVY}}>(settings)️ Settings</span></div>
+            <div style={S.cardHead}><span style={{fontWeight:700,color:NAVY}}>(settings) Settings</span></div>
             <div style={S.cardBody}>
 
               {/* Subscription status */}
@@ -1515,7 +1515,7 @@ ${JSON_RULES}`;
                 const isActive = subExpiry && new Date(subExpiry) >= new Date();
                 const bgColor = isOwner ? "#e6f7ee" : isExpired ? "#fee2e2" : isActive ? "#e6f7ee" : "#f1f5f9";
                 const borderColor = isOwner ? "#b3e6cc" : isExpired ? "#fca5a5" : isActive ? "#b3e6cc" : "#e2e8f0";
-                const planLabel = isOwner ? "🛡️ Owner Account" : subPlan === "trial" ? "🔄 Trial" : ("📋 " + (subPlan||"").charAt(0).toUpperCase() + (subPlan||"").slice(1) + " Plan");
+                const planLabel = isOwner ? "🛡 Owner Account" : subPlan === "trial" ? "🔄 Trial" : ("📋 " + (subPlan||"").charAt(0).toUpperCase() + (subPlan||"").slice(1) + " Plan");
                 const expiryLabel = isOwner ? "Full access - no expiry" : subExpiry ? ("Expires: " + new Date(subExpiry).toLocaleDateString("en-GB")) : "No expiry date set - contact your administrator";
                 return (
                   <div style={{background:bgColor,border:"1px solid "+borderColor,borderRadius:8,padding:"12px 16px",marginBottom:14,fontSize:13}}>
@@ -1595,12 +1595,12 @@ ${JSON_RULES}`;
                       style={{...S.btn("green"),textDecoration:"none",display:"inline-flex",alignItems:"center",gap:6,
                         opacity:settings.email?1:0.5,pointerEvents:settings.email?"auto":"none"}}
                       onClick={()=>setEmailStatus(total>0?"sent":"nothing-due")}>
-                      Email️ Send Reminder Email
+                      Email Send Reminder Email
                     </a>
                     {!settings.email && <span style={{fontSize:12,color:"#dc2626"}}>Enter an email address above first</span>}
                     {settings.email && total===0 && <span style={{fontSize:12,color:GREEN}}>v No assessments currently overdue or due soon</span>}
                     {settings.email && total>0 && <span style={{fontSize:12,color:"#d97706"}}>
-                      (!)️ {overdue.length>0&&`${overdue.length} overdue`}{overdue.length>0&&due.length>0&&", "}{due.length>0&&`${due.length} due soon`}
+                      (!) {overdue.length>0&&`${overdue.length} overdue`}{overdue.length>0&&due.length>0&&", "}{due.length>0&&`${due.length} due soon`}
                     </span>}
                   </div>
                 );
@@ -1621,7 +1621,7 @@ ${JSON_RULES}`;
               <div style={{display:"flex",alignItems:"center",gap:12}}>
                 <button style={S.btn("green")} onClick={()=>exportToCSV(products)}
                   disabled={products.length===0}>
-                  v️ Export Register to CSV
+                  v Export Register to CSV
                 </button>
                 {products.length===0
                   ? <span style={{fontSize:12,color:"#94a3b8"}}>No products in register yet</span>
