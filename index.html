@@ -823,7 +823,7 @@ ${JSON_RULES}`;
         ? `v Found on <strong>Hampshire County Supplies</strong>.`
         : `v Found via manufacturer SDS.`;
       const urlPart = sdsUrl
-        ? ` <a href="${sdsUrl}" target="_blank" style="color:${GREEN};font-weight:600">View source SDS &rarr;</a>`
+        ? ` <a href="${sdsUrl}" target="_blank" style="color:${GREEN};font-weight:600">View source SDS -></a>`
         : " Please review all fields before saving.";
       setAiStatus({type:"success", msg: sourceLabel + urlPart, isHtml:true});
 
@@ -1487,7 +1487,7 @@ ${JSON_RULES}`;
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}} className="no-print">
               <h2 style={{fontSize:18,fontWeight:700,color:NAVY}}>Print Preview - A4 Landscape</h2>
               <div style={{display:"flex",gap:10}}>
-                <button style={S.btn("ghost")} onClick={()=>setTab("form")}>&larr; Edit</button>
+                <button style={S.btn("ghost")} onClick={()=>setTab("form")}> Back</button>
                 <button style={S.btn("green")} onClick={()=>window.print()}>🖨️ Print / Save PDF</button>
               </div>
             </div>
@@ -1542,7 +1542,7 @@ ${JSON_RULES}`;
 
               <div style={S.secTitle}>AI Search - Anthropic API Key</div>
               <div style={{fontSize:13,color:"#64748b",marginBottom:12,lineHeight:1.6}}>
-                Required for AI auto-fill and SDS search. Get a free key at <a href="https://console.anthropic.com" target="_blank" style={{color:"#00b050"}}>console.anthropic.com</a> &rarr; API Keys. Your key is stored locally in your browser only - never shared.
+                Required for AI auto-fill and SDS search. Get a free key at <a href="https://console.anthropic.com" target="_blank" style={{color:"#00b050"}}>console.anthropic.com</a> -> API Keys. Your key is stored locally in your browser only - never shared.
               </div>
               <div style={{...S.grid2,marginBottom:14}}>
                 <Field label="Anthropic API Key" span2>
@@ -1672,7 +1672,6 @@ ${JSON_RULES}`;
   );
 }
 
-// --- PRINT PREVIEW ------------------------------------------------------------
 function PrintPreview({p, school, addr}) {
   const chk = v => v ? "Yes" : "No";
   const c = p || {};
@@ -1772,22 +1771,22 @@ function PrintPreview({p, school, addr}) {
         <tbody>
           <tr>
             <td style={{...td,width:"12%"}}><strong>Ventilation</strong></td>
-            <td style={td}>{chk(c.ventGeneral)} General &nbsp; {chk(c.ventLEV)} LEV &nbsp; {chk(c.airMonitor)} Air Monitor &nbsp; {chk(c.ventNA)} N/A</td>
+            <td style={td}>{chk(c.ventGeneral)} General   {chk(c.ventLEV)} LEV   {chk(c.airMonitor)} Air Monitor   {chk(c.ventNA)} N/A</td>
             <td style={{...td,width:"12%"}}><strong>Skin Protection</strong></td>
-            <td style={td}>{chk(c.preCreams)} Pre-work Creams &nbsp; {chk(c.gloves)} Gloves &nbsp; {chk(c.apron)} Apron &nbsp; {chk(c.footwear)} Footwear{c.footwearType&&`: ${c.footwearType}`} &nbsp; {chk(c.skinNA)} N/A</td>
+            <td style={td}>{chk(c.preCreams)} Pre-work Creams   {chk(c.gloves)} Gloves   {chk(c.apron)} Apron   {chk(c.footwear)} Footwear{c.footwearType&&`: ${c.footwearType}`}   {chk(c.skinNA)} N/A</td>
           </tr>
           <tr>
             <td style={td}><strong>Respiratory</strong></td>
-            <td style={td}>{chk(c.halfMask)} Half Mask &nbsp; {chk(c.fullMask)} Full Mask &nbsp; {chk(c.dustMask)} Dust Mask &nbsp; {chk(c.respNA)} N/A {c.protFactor&&`- RPF: ${c.protFactor}`}</td>
+            <td style={td}>{chk(c.halfMask)} Half Mask   {chk(c.fullMask)} Full Mask   {chk(c.dustMask)} Dust Mask   {chk(c.respNA)} N/A {c.protFactor&&`- RPF: ${c.protFactor}`}</td>
             <td style={td}><strong>Eye & Face</strong></td>
-            <td style={td}>{chk(c.safetySpecs)} Spectacles &nbsp; {chk(c.goggles)} Goggles &nbsp; {chk(c.faceShield)} Face Shield &nbsp; {chk(c.eyeNA)} N/A</td>
+            <td style={td}>{chk(c.safetySpecs)} Spectacles   {chk(c.goggles)} Goggles   {chk(c.faceShield)} Face Shield   {chk(c.eyeNA)} N/A</td>
           </tr>
           <tr>
-            <td style={td} colSpan={2}><strong>Health Surveillance: </strong>{chk(c.staffTrained)} Self-exam &nbsp; {chk(c.healthSurv)} Surveillance req. &nbsp; {chk(c.occupHealth)} OCU programme &nbsp; {chk(c.sysMonitored)} System monitored</td>
+            <td style={td} colSpan={2}><strong>Health Surveillance: </strong>{chk(c.staffTrained)} Self-exam   {chk(c.healthSurv)} Surveillance req.   {chk(c.occupHealth)} OCU programme   {chk(c.sysMonitored)} System monitored</td>
             <td style={td} colSpan={2}>
-                <strong>Stand-alone product?</strong> {c.standalone||"-"} &nbsp;|&nbsp;
-                <strong>Used in combination?</strong> {c.accumulated||"-"} &nbsp;|&nbsp;
-                <strong>Accumulation considered?</strong> {c.separateAssess||"-"} &nbsp;|&nbsp;
+                <strong>Stand-alone product?</strong> {c.standalone||"-"}  | 
+                <strong>Used in combination?</strong> {c.accumulated||"-"}  | 
+                <strong>Accumulation considered?</strong> {c.separateAssess||"-"}  | 
                 <strong>Separate assessment in place?</strong> {c.separateAssessConfirm?"Yes":"No"}
               </td>
           </tr>
@@ -1830,7 +1829,7 @@ function PrintPreview({p, school, addr}) {
           <tr>
             <td style={{...td,fontSize:"7pt",fontStyle:"italic"}}>Assessor</td>
             <td style={{...td,height:32}}>{c.assessorName}{c.assessorTitle&&` / ${c.assessorTitle}`}</td>
-            <td style={{...td,height:32,borderBottom:"1px solid #333"}}>&nbsp;</td>
+            <td style={{...td,height:32,borderBottom:"1px solid #333"}}> </td>
             <td style={{...td,height:32}}>{c.assessDate ? new Date(c.assessDate).toLocaleDateString("en-GB") : ""}</td>
           </tr>
           <tr>
@@ -1840,8 +1839,8 @@ function PrintPreview({p, school, addr}) {
           <tr>
             <td style={{...td,fontSize:"7pt",fontStyle:"italic"}}>Responsible Manager</td>
             <td style={{...td,height:32}}>{c.managerName}{c.managerTitle&&` / ${c.managerTitle}`}</td>
-            <td style={{...td,height:32,borderBottom:"1px solid #333"}}>&nbsp;</td>
-            <td style={{...td,height:32,borderBottom:"1px solid #333"}}>&nbsp;</td>
+            <td style={{...td,height:32,borderBottom:"1px solid #333"}}> </td>
+            <td style={{...td,height:32,borderBottom:"1px solid #333"}}> </td>
           </tr>
         </tbody>
       </table>
