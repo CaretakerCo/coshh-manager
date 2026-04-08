@@ -91,7 +91,7 @@ const supa = {
   async upsertAssessment(token, userId, schoolId, assessment) {
     const { id, _rowId, ...rest } = assessment;
     const recordId = id || Date.now().toString();
-    await fetch(`${SUPA_URL}/rest/v1/assessments`, {
+    const r = await fetch(`${SUPA_URL}/rest/v1/assessments`, {
       method:"POST",
       headers: { ...this.authHeaders(token), "Prefer": "resolution=merge-duplicates,return=minimal" },
       body: JSON.stringify({
@@ -100,6 +100,10 @@ const supa = {
         updated_at: new Date().toISOString()
       })
     });
+    if (!r.ok) {
+      const errText = await r.text();
+      throw new Error(`Supabase save failed (${r.status}): ${errText}`);
+    }
     return recordId;
   },
 
@@ -164,7 +168,7 @@ const BLANK = {
   locationOfSDS:"", storage:"", useInstructions:"", controlMeasures:"", disposal:"",
   firstAid:"", fire:"", notes:"",
   assessorName:"", assessorTitle:"", managerName:"", managerTitle:"",
-  savedAt:"", sdsUrl:"", sdsData:null, sdsFilename:"",
+  savedAt:"", sdsUrl:"", sdsData:null, sdsFilename:"", sdsSource:"",
 };
 
 function today() { return new Date().toISOString().split("T")[0]; }
@@ -683,9 +687,10 @@ wel: Yes or No or Unknown`;
       setForm(f => ({
         ...f,
         ...json,
-        sdsData: dataUrl,       // keep the file we already stored
-        sdsFilename: file.name, // keep filename
-        sdsAttached: "Yes",     // mark as attached
+        sdsData: dataUrl,
+        sdsFilename: file.name,
+        sdsAttached: "Yes",
+        sdsSource: "PDF Upload",
         assessDate: f.assessDate || today(),
         reviewDate: f.reviewDate || nextYear(),
       }));
@@ -828,6 +833,7 @@ ${JSON_RULES}`;
         reviewDate: f.reviewDate || nextYear(),
         sdsUrl: sdsUrl || f.sdsUrl,
         sdsAttached: sdsUrl ? "Online" : f.sdsAttached,
+        sdsSource: source === "hcc" ? "AI - County Supplies" : "AI - Manufacturer SDS",
       }));
 
       const sourceLabel = source === "hcc"
@@ -873,6 +879,7 @@ ${JSON_RULES}`;
     } catch(e) {
       console.error("Save error:", e);
       setSyncStatus("error");
+      alert("Save failed: " + e.message + "\n\nYour assessment was NOT saved to the cloud. Please try again.");
     }
     setEditingId(null);
     setTab("register");
@@ -1053,7 +1060,7 @@ ${JSON_RULES}`;
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
                   <thead>
                     <tr style={{background:"#f8fafc"}}>
-                      {["Product","Manufacturer","Location","Stock","Assessed","Review Due","Status",""].map(h =>
+                      {["Product","Manufacturer","Location","Stock","Assessed","Review Due","Status","Source",""].map(h =>
                         <th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,
                           textTransform:"uppercase",letterSpacing:".04em",color:"#64748b",
                           borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap"}}>{h}</th>
@@ -1075,6 +1082,13 @@ ${JSON_RULES}`;
                           <td style={{padding:"12px 14px",fontSize:13}}>{fmtDate(p.assessDate)}</td>
                           <td style={{padding:"12px 14px",fontSize:13}}>{fmtDate(p.reviewDate)}</td>
                           <td style={{padding:"12px 14px"}}><span style={S.badge(st.cls)}>{st.label}</span></td>
+                          <td style={{padding:"12px 14px"}}>
+                            {(() => {
+                              const src = p.sdsSource || "Manual";
+                              const color = src.startsWith("AI - County") ? ["#e6f7ee","#007a38"] : src.startsWith("AI -") ? ["#e0f2fe","#0369a1"] : src === "PDF Upload" ? ["#f3e8ff","#7e22ce"] : ["#f1f5f9","#64748b"];
+                              return <span style={{background:color[0],color:color[1],padding:"3px 8px",borderRadius:20,fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>{src}</span>;
+                            })()}
+                          </td>
                           <td style={{padding:"12px 14px",whiteSpace:"nowrap"}}>
                             <button onClick={()=>editProduct(p.id)} style={{...S.btn("ghost"),marginRight:4,fontSize:12,padding:"5px 10px"}}>Edit Edit</button>
                             <button onClick={()=>{setPrintData(p);setTab("print");}} style={{...S.btn("ghost"),marginRight:4,fontSize:12,padding:"5px 10px"}}>🖨</button>
