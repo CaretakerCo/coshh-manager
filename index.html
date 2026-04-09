@@ -507,7 +507,7 @@ function App() {
   // -- HANDLE LOGIN --
   const handleLogin = (sess) => {
     localStorage.setItem("coshh_session", JSON.stringify(sess));
-    window.location.reload();
+    setSession(sess);
   };
 
   // -- REFRESH TOKEN IF EXPIRED --
@@ -533,7 +533,12 @@ function App() {
   const handleLogout = async () => {
     if (session?.token) { try { await supa.signOut(session.token); } catch(e) {} }
     localStorage.removeItem("coshh_session");
-    window.location.reload();
+    setSession(null);
+    setProducts([]);
+    setSchoolId(null);
+    setSubChecked(false);
+    setSubPlan(null);
+    setSubExpiry(null);
   };
 
   // -- LOAD DATA FROM SUPABASE ON LOGIN --
@@ -986,8 +991,7 @@ ${JSON_RULES}`;
   const overdue = products.filter(p => statusInfo(p.reviewDate,rd).cls==="overdue");
   const due = products.filter(p => statusInfo(p.reviewDate,rd).cls==="due");
 
-  // -- AUTH GATE (after all hooks) --
-  if (!session) return <LoginScreen onLogin={handleLogin} />;
+  // -- AUTH GATE handled in return below --
 
   // -----------------------------------------------------------------------------
   return (
@@ -1005,7 +1009,13 @@ ${JSON_RULES}`;
         ::-webkit-scrollbar { width:6px; } ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:3px; }
       `}</style>
 
-      {/* Loading spinner while subscription check runs */}
+      {/* NOT LOGGED IN */}
+      {!session && <LoginScreen onLogin={handleLogin} />}
+
+      {/* LOGGED IN */}
+      {session && (<div style={{display:"contents"}}>
+
+      {/* Loading spinner */}
       {!subChecked && (
         <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
           <div style={{width:40,height:40,border:`3px solid ${GREEN}`,borderTopColor:"transparent",borderRadius:"50%",animation:"spin .7s linear infinite"}} />
@@ -1762,6 +1772,7 @@ ${JSON_RULES}`;
           </div>
         )}
       </div>
+      </div>)} {/* end session conditional */}
     </div>
   );
 }
