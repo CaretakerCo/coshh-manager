@@ -1061,7 +1061,7 @@ ${JSON_RULES}`;
 
       {/* TABS */}
       <div style={S.tabs} className="no-print">
-        {[["register","📋 Register"],["form","+ Assessment"],["print","🖨 Print"],["settings","(settings) Settings"]].map(([id,label]) =>
+        {[["register","📋 Register"],["form","+ Assessment"],["print","🖨 Print"],["settings","Settings"]].map(([id,label]) =>
           <button key={id} style={S.tab(tab===id)} onClick={() => setTab(id)}>{label}</button>
         )}
       </div>
