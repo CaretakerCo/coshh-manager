@@ -536,6 +536,9 @@ function App() {
     setSession(null);
     setProducts([]);
     setSchoolId(null);
+    setSubChecked(false);
+    setSubPlan(null);
+    setSubExpiry(null);
   };
 
   // -- LOAD DATA FROM SUPABASE ON LOGIN --
@@ -600,6 +603,15 @@ function App() {
 
   // -- SHOW LOGIN IF NOT AUTHENTICATED --
   if (!session) return <LoginScreen onLogin={handleLogin} />;
+
+  // -- LOADING WHILE CHECKING SUBSCRIPTION --
+  if (!subChecked) return (
+    <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
+      <div style={{width:40,height:40,border:`3px solid ${GREEN}`,borderTopColor:"transparent",borderRadius:"50%",animation:"spin .7s linear infinite"}} />
+      <div style={{color:NAVY,fontWeight:600}}>Loading...</div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
 
   // -- SUBSCRIPTION EXPIRED SCREEN --
   if (subChecked && subPlan !== "owner" && subExpiry && new Date(subExpiry) < new Date()) {
