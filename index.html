@@ -604,43 +604,6 @@ function App() {
   // -- SHOW LOGIN IF NOT AUTHENTICATED --
   if (!session) return <LoginScreen onLogin={handleLogin} />;
 
-  // -- LOADING WHILE CHECKING SUBSCRIPTION --
-  if (!subChecked) return (
-    <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
-      <div style={{width:40,height:40,border:`3px solid ${GREEN}`,borderTopColor:"transparent",borderRadius:"50%",animation:"spin .7s linear infinite"}} />
-      <div style={{color:NAVY,fontWeight:600}}>Loading...</div>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
-    </div>
-  );
-
-  // -- SUBSCRIPTION EXPIRED SCREEN --
-  if (subChecked && subPlan !== "owner" && subExpiry && new Date(subExpiry) < new Date()) {
-    return (
-      <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-        <div style={{width:"100%",maxWidth:480,textAlign:"center"}}>
-          <div style={{width:60,height:60,background:"#fee2e2",borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,margin:"0 auto 16px"}}>(clock)</div>
-          <div style={{fontWeight:800,fontSize:22,color:NAVY,marginBottom:8}}>Your subscription has expired</div>
-          <div style={{fontSize:14,color:"#64748b",marginBottom:24,lineHeight:1.6}}>
-            Your COSHH Manager subscription expired on <strong>{new Date(subExpiry).toLocaleDateString("en-GB")}</strong>.<br/>
-            Your data is safe and waiting - please renew to regain access.
-          </div>
-          <div style={{background:"white",borderRadius:12,border:"1px solid #e2e8f0",padding:24,marginBottom:20,textAlign:"left"}}>
-            <div style={{fontWeight:700,color:NAVY,marginBottom:12}}>To renew your subscription:</div>
-            <div style={{fontSize:13,color:"#334155",lineHeight:2}}>
-              📧 Email: <strong>hello@coshhmanager.co.uk</strong><br/>
-              📞 Or contact your COSHH Manager administrator<br/>
-              💳 Annual renewal from <strong>GBP 149/year</strong>
-            </div>
-          </div>
-          <button onClick={handleLogout}
-            style={{background:"none",border:"1px solid #cbd5e1",borderRadius:7,padding:"9px 20px",fontFamily:"inherit",fontSize:13,cursor:"pointer",color:"#64748b"}}>
-            Sign out
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   // Read uploaded file to base64, store it, then extract SDS data via AI
   const handleSdsUpload = useCallback(async (file) => {
     if (!file) return;
@@ -1044,10 +1007,46 @@ ${JSON_RULES}`;
           .no-print { display:none !important; }
           .print-area { padding:6mm; }
           header { display:none !important; }
-          [style*="S.tabs"] { display:none !important; }
         }
         ::-webkit-scrollbar { width:6px; } ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:3px; }
       `}</style>
+
+      {/* Loading spinner while subscription check runs */}
+      {!subChecked && (
+        <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
+          <div style={{width:40,height:40,border:`3px solid ${GREEN}`,borderTopColor:"transparent",borderRadius:"50%",animation:"spin .7s linear infinite"}} />
+          <div style={{color:NAVY,fontWeight:600,fontFamily:"inherit"}}>Loading...</div>
+        </div>
+      )}
+
+      {/* Subscription expired screen */}
+      {subChecked && subPlan !== "owner" && subExpiry && new Date(subExpiry) < new Date() && (
+        <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{width:"100%",maxWidth:480,textAlign:"center"}}>
+            <div style={{width:60,height:60,background:"#fee2e2",borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,margin:"0 auto 16px"}}>(clock)</div>
+            <div style={{fontWeight:800,fontSize:22,color:NAVY,marginBottom:8}}>Your subscription has expired</div>
+            <div style={{fontSize:14,color:"#64748b",marginBottom:24,lineHeight:1.6}}>
+              Your COSHH Manager subscription expired on <strong>{new Date(subExpiry).toLocaleDateString("en-GB")}</strong>.<br/>
+              Your data is safe and waiting - please renew to regain access.
+            </div>
+            <div style={{background:"white",borderRadius:12,border:"1px solid #e2e8f0",padding:24,marginBottom:20,textAlign:"left"}}>
+              <div style={{fontWeight:700,color:NAVY,marginBottom:12}}>To renew your subscription:</div>
+              <div style={{fontSize:13,color:"#334155",lineHeight:2}}>
+                📧 Email: <strong>hello@coshhmanager.co.uk</strong><br/>
+                📞 Or contact your COSHH Manager administrator<br/>
+                💳 Annual renewal from <strong>GBP 149/year</strong>
+              </div>
+            </div>
+            <button onClick={handleLogout} style={{background:"none",border:"1px solid #cbd5e1",borderRadius:7,padding:"9px 20px",fontFamily:"inherit",fontSize:13,cursor:"pointer",color:"#64748b"}}>
+              Sign out
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Main app - only show when subscription is valid */}
+      {subChecked && (subPlan === "owner" || !subExpiry || new Date(subExpiry) >= new Date()) && (
+      <div>
 
       {/* HEADER */}
       <header style={S.header} className="no-print">
@@ -1773,6 +1772,7 @@ ${JSON_RULES}`;
           </div>
         )}
       </div>
+      )} {/* end main app conditional */}
     </div>
   );
 }
