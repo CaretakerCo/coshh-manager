@@ -652,23 +652,20 @@ wel: Yes or No or Unknown`;
         const data = await res.json();
         raw = data.content.filter(b => b.type === "text").map(b => b.text).join("");
       } else {
-        // PDF: use web search to find SDS by filename/product name
-        const productHint = file.name
-          .replace(/[-_]/g, " ")
-          .replace(/\.pdf$/i, "")
-          .replace(/(sds|msds|safety.?data.?sheet|en.uk|english|uk)/gi, "")
-          .replace(/\s+/g, " ")
-          .trim();
+        // PDF: send actual PDF content to Claude to read directly
+        setAiStatus({type:"loading", msg:`Reading PDF "${file.name}"...`});
         const res = await fetch("https://round-feather-e5a3.u2cstevo.workers.dev", {
           method: "POST",
-          headers: {"Content-Type": "application/json", "anthropic-version": "2023-06-01", "anthropic-beta": "web-search-2025-03-05"},
+          headers: {"Content-Type": "application/json", "anthropic-version": "2023-06-01", "anthropic-beta": "pdfs-2024-09-25"},
           body: JSON.stringify({
             model: "claude-haiku-4-5",
-            max_tokens: 700,
-            tools: [{type: "web_search_20250305", name: "web_search", max_uses: 1}],
+            max_tokens: 1024,
             messages: [{
               role: "user",
-              content: `Find the UK Safety Data Sheet for "${productHint}" and extract its COSHH data. ${prompt}`
+              content: [
+                {type: "document", source: {type: "base64", media_type: "application/pdf", data: base64}},
+                {type: "text", text: prompt}
+              ]
             }]
           })
         });
