@@ -6,10 +6,7 @@
   <title>COSHH Manager - Hampshire Schools</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'DM Sans', system-ui, sans-serif; background: #f8fafc; }
-  </style>
+  <style>* { box-sizing: border-box; margin: 0; padding: 0; } body { font-family: 'DM Sans', system-ui, sans-serif; background: #f8fafc; }</style>
 </head>
 <body>
   <div id="root"></div>
@@ -47,6 +44,14 @@ const supa = {
       method:"POST",
       headers: { ...this.headers, "Authorization": `Bearer ${token}` }
     });
+  },
+
+  async refreshToken(refreshToken) {
+    const r = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method:"POST", headers: this.headers,
+      body: JSON.stringify({ refresh_token: refreshToken })
+    });
+    return r.json();
   },
 
   authHeaders(token) {
@@ -88,18 +93,24 @@ const supa = {
     return data.map(row => ({ ...row.data, id: row.id, _rowId: row.id }));
   },
 
-  async upsertAssessment(token, userId, schoolId, assessment) {
+  async upsertAssessment(token, userId, schoolId, assessment, refreshFn) {
     const { id, _rowId, ...rest } = assessment;
     const recordId = id || Date.now().toString();
-    const r = await fetch(`${SUPA_URL}/rest/v1/assessments`, {
+    let useToken = token;
+    const doSave = async (t) => fetch(`${SUPA_URL}/rest/v1/assessments`, {
       method:"POST",
-      headers: { ...this.authHeaders(token), "Prefer": "resolution=merge-duplicates,return=minimal" },
+      headers: { ...this.authHeaders(t), "Prefer": "resolution=merge-duplicates,return=minimal" },
       body: JSON.stringify({
         id: recordId, user_id: userId, school_id: schoolId,
         data: { ...rest, id: recordId },
         updated_at: new Date().toISOString()
       })
     });
+    let r = await doSave(useToken);
+    if (r.status === 401 && refreshFn) {
+      useToken = await refreshFn();
+      r = await doSave(useToken);
+    }
     if (!r.ok) {
       const errText = await r.text();
       throw new Error(`Supabase save failed (${r.status}): ${errText}`);
@@ -399,7 +410,7 @@ function LoginScreen({ onLogin }) {
         setError(data.error_description || data.error?.message || "Authentication failed.");
       } else if (data.access_token) {
         // Successful login or signup with auto-confirm
-        onLogin({ token: data.access_token, userId: data.user?.id || data.user_id, email });
+        onLogin({ token: data.access_token, userId: data.user?.id || data.user_id, email, refreshToken: data.refresh_token });
       } else if (mode === "signup" && (data.id || data.user?.id)) {
         // Signup succeeded but needs email confirmation
         setMode("login");
@@ -410,7 +421,7 @@ function LoginScreen({ onLogin }) {
         // Try signing in immediately after signup
         const loginData = await supa.signIn(email, password);
         if (loginData.access_token) {
-          onLogin({ token: loginData.access_token, userId: loginData.user?.id || loginData.user_id, email });
+          onLogin({ token: loginData.access_token, userId: loginData.user?.id || loginData.user_id, email, refreshToken: loginData.refresh_token });
         } else {
           setMode("login");
           setError("Account created - please sign in.");
@@ -491,12 +502,32 @@ function App() {
   const [sdsLoading, setSdsLoading] = useState(false);
   const [emailStatus, setEmailStatus] = useState(null); // null | "sent" | "no-email" | "nothing-due"
   const [dataLoading, setDataLoading] = useState(false);
+  const [printOrientation, setPrintOrientation] = useState("landscape");
 
   // -- HANDLE LOGIN --
   const handleLogin = (sess) => {
     localStorage.setItem("coshh_session", JSON.stringify(sess));
     setSession(sess);
   };
+
+  // -- REFRESH TOKEN IF EXPIRED --
+  const getValidToken = useCallback(async () => {
+    if (!session) return null;
+    // Try current token first - if it works, return it
+    // If we have a refresh token, use it to get a new access token
+    if (session.refreshToken) {
+      try {
+        const data = await supa.refreshToken(session.refreshToken);
+        if (data.access_token) {
+          const newSess = { ...session, token: data.access_token, refreshToken: data.refresh_token || session.refreshToken };
+          localStorage.setItem("coshh_session", JSON.stringify(newSess));
+          setSession(newSess);
+          return data.access_token;
+        }
+      } catch(e) {}
+    }
+    return session.token;
+  }, [session]);
 
   // -- HANDLE LOGOUT --
   const handleLogout = async () => {
@@ -856,9 +887,10 @@ ${JSON_RULES}`;
     const record = {...form, id: editingId || Date.now().toString(), savedAt: new Date().toISOString()};
     setSyncStatus("syncing");
     try {
+      const token = await getValidToken();
       let sId = schoolId;
       if (!sId) {
-        sId = await supa.upsertSchool(session.token, session.userId, {
+        sId = await supa.upsertSchool(token, session.userId, {
           school_name: settings.schoolName,
           school_address: settings.schoolAddress,
           assessor_name: settings.assessorName,
@@ -868,7 +900,7 @@ ${JSON_RULES}`;
         });
         setSchoolId(sId);
       }
-      const savedId = await supa.upsertAssessment(session.token, session.userId, sId, record);
+      const savedId = await supa.upsertAssessment(token, session.userId, sId, record, getValidToken);
       const finalRecord = {...record, id: savedId};
       setProducts(prev => {
         const idx = prev.findIndex(p => p.id === record.id);
@@ -890,16 +922,17 @@ ${JSON_RULES}`;
     const record = {...form, id: editingId || Date.now().toString(), savedAt: new Date().toISOString()};
     setSyncStatus("syncing");
     try {
+      const token = await getValidToken();
       let sId = schoolId;
       if (!sId) {
-        sId = await supa.upsertSchool(session.token, session.userId, {
+        sId = await supa.upsertSchool(token, session.userId, {
           school_name: settings.schoolName, school_address: settings.schoolAddress,
           assessor_name: settings.assessorName, assessor_title: settings.assessorTitle,
           manager_name: settings.managerName, reminder_days: settings.reminderDays,
         });
         setSchoolId(sId);
       }
-      const savedId = await supa.upsertAssessment(session.token, session.userId, sId, record);
+      const savedId = await supa.upsertAssessment(token, session.userId, sId, record, getValidToken);
       const finalRecord = {...record, id: savedId};
       setProducts(prev => {
         const idx = prev.findIndex(p => p.id === record.id);
@@ -958,7 +991,6 @@ ${JSON_RULES}`;
         @media print {
           .no-print { display:none !important; }
           .print-area { padding:6mm; }
-          @page { size: A4 landscape; margin: 8mm; }
         }
         ::-webkit-scrollbar { width:6px; } ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:3px; }
       `}</style>
@@ -1510,13 +1542,23 @@ ${JSON_RULES}`;
         {tab === "print" && (
           <div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}} className="no-print">
-              <h2 style={{fontSize:18,fontWeight:700,color:NAVY}}>Print Preview - A4 Landscape</h2>
-              <div style={{display:"flex",gap:10}}>
+              <h2 style={{fontSize:18,fontWeight:700,color:NAVY}}>Print Preview - A4 {printOrientation==="portrait"?"Portrait":"Landscape"}</h2>
+              <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                <div style={{display:"flex",background:"#f1f5f9",borderRadius:6,padding:2,gap:2}}>
+                  <button onClick={()=>setPrintOrientation("landscape")}
+                    style={{padding:"5px 12px",border:"none",borderRadius:5,fontFamily:"inherit",fontSize:12,cursor:"pointer",
+                      background:printOrientation==="landscape"?NAVY:"transparent",
+                      color:printOrientation==="landscape"?"white":"#64748b",fontWeight:600}}>Landscape</button>
+                  <button onClick={()=>setPrintOrientation("portrait")}
+                    style={{padding:"5px 12px",border:"none",borderRadius:5,fontFamily:"inherit",fontSize:12,cursor:"pointer",
+                      background:printOrientation==="portrait"?NAVY:"transparent",
+                      color:printOrientation==="portrait"?"white":"#64748b",fontWeight:600}}>Portrait</button>
+                </div>
                 <button style={S.btn("ghost")} onClick={()=>setTab("form")}> Back</button>
                 <button style={S.btn("green")} onClick={()=>window.print()}>🖨 Print / Save PDF</button>
               </div>
             </div>
-            {printData ? <PrintPreview p={printData} school={settings.schoolName} addr={settings.schoolAddress} /> : (
+            {printData ? <PrintPreview p={printData} school={settings.schoolName} addr={settings.schoolAddress} orientation={printOrientation} /> : (
               <div style={{textAlign:"center",padding:60,color:"#64748b"}}>
                 No assessment loaded. Click "Save & Print Preview" from the form.
               </div>
@@ -1657,7 +1699,8 @@ ${JSON_RULES}`;
               <button style={S.btn("green")} onClick={async ()=>{
                 setSyncStatus("syncing");
                 try {
-                  const sId = await supa.upsertSchool(session.token, session.userId, {
+                  const tok = await getValidToken();
+                  const sId = await supa.upsertSchool(tok, session.userId, {
                     school_name: settings.schoolName,
                     school_address: settings.schoolAddress,
                     assessor_name: settings.assessorName,
@@ -1684,7 +1727,8 @@ ${JSON_RULES}`;
                 <button style={S.btn("ghost")} onClick={()=>setDeleteTarget(null)}>Cancel</button>
                 <button style={S.btn("danger")} onClick={async ()=>{
                   try {
-                    await supa.deleteAssessment(session.token, deleteTarget.id);
+                    const delTok = await getValidToken();
+                    await supa.deleteAssessment(delTok, deleteTarget.id);
                   } catch(e) { console.error("Delete error:", e); }
                   setProducts(prev=>prev.filter(p=>p.id!==deleteTarget.id));
                   setDeleteTarget(null);
@@ -1698,7 +1742,7 @@ ${JSON_RULES}`;
   );
 }
 
-function PrintPreview({p, school, addr}) {
+function PrintPreview({p, school, addr, orientation="landscape"}) {
   const chk = v => v ? "Yes" : "No";
   const c = p || {};
   const ctrl = c.controls || c; // support both formats
@@ -1720,9 +1764,10 @@ function PrintPreview({p, school, addr}) {
   const th = {...td,background:"#d4edda",fontWeight:"bold",fontSize:"7pt"};
 
   return (
-    <div className="print-area" style={{background:"white",maxWidth:1060,margin:"0 auto",
+    <div className="print-area" style={{background:"white",maxWidth:orientation==="portrait"?780:1060,margin:"0 auto",
       padding:"16px 20px",boxShadow:"0 4px 24px rgba(0,0,0,.12)",fontFamily:"Arial,sans-serif",
       fontSize:"8pt",color:"#000",lineHeight:1.3}}>
+      <style>{`@media print { @page { size: A4 ${orientation}; margin: 8mm; } }`}</style>
 
       <div style={{textAlign:"center",fontWeight:"bold",fontSize:"12pt",borderBottom:"2px solid #000",paddingBottom:6,marginBottom:4}}>
         COSHH Assessment Form - Subject to Control of Substances Hazardous to Health Regulations
@@ -1743,7 +1788,7 @@ function PrintPreview({p, school, addr}) {
             <th style={th}>Date of Assessment</th><th style={th}>Date of Review</th>
           </tr>
           <tr>
-            <td style={td}><strong>{c.productName}</strong>{c.processDesc&&<><br/><span style={{fontSize:"7pt",color:"#555"}}>{c.processDesc}</span></>}</td>
+            <td style={{...td,background:"#e6f7ee",borderLeft:"4px solid #00b050"}}><strong style={{fontSize:"9pt",color:"#1a5c32"}}>{c.productName}</strong>{c.processDesc&&<><br/><span style={{fontSize:"7pt",color:"#555"}}>{c.processDesc}</span></>}</td>
             <td style={td}>{c.location}</td><td style={td}>{c.task}</td>
             <td style={td}>{c.assessDate ? new Date(c.assessDate).toLocaleDateString("en-GB") : "-"}</td>
             <td style={td}>{c.reviewDate ? new Date(c.reviewDate).toLocaleDateString("en-GB") : "-"}</td>
