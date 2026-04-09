@@ -991,12 +991,14 @@ ${JSON_RULES}`;
         @media print {
           .no-print { display:none !important; }
           .print-area { padding:6mm; }
+          header { display:none !important; }
+          [style*="S.tabs"] { display:none !important; }
         }
         ::-webkit-scrollbar { width:6px; } ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:3px; }
       `}</style>
 
       {/* HEADER */}
-      <header style={S.header}>
+      <header style={S.header} className="no-print">
         <div style={{display:"flex", alignItems:"center", gap:10}}>
           <div style={{width:34,height:34,background:GREEN,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🛡</div>
           <div>
@@ -1751,11 +1753,11 @@ function PrintPreview({p, school, addr, orientation="landscape"}) {
     const sel = (c.hazards||[]).includes(h.key);
     return (
       <div key={h.key} style={{display:"flex",flexDirection:"column",alignItems:"center",
-        border:sel?"2px solid #c00":"1px solid #ccc",padding:3,width:76,
+        border:sel?"2px solid #c00":"1px solid #ccc",padding:2,width:52,
         background:sel?"#fff8f0":"white",opacity:sel?1:.35}}>
-        <img src={HIMGS[h.img]} alt={h.label} style={{width:26,height:26,objectFit:"contain"}} />
-        <div style={{fontSize:"5.5pt",textAlign:"center",lineHeight:1.2,marginTop:2}}>{h.label}</div>
-        <div style={{fontSize:"9pt"}}>{sel?"Yes":"No"}</div>
+        <img src={HIMGS[h.img]} alt={h.label} style={{width:18,height:18,objectFit:"contain"}} />
+        <div style={{fontSize:"4.5pt",textAlign:"center",lineHeight:1.1,marginTop:1}}>{h.label}</div>
+        <div style={{fontSize:"7pt"}}>{sel?"Yes":"No"}</div>
       </div>
     );
   });
@@ -1765,9 +1767,9 @@ function PrintPreview({p, school, addr, orientation="landscape"}) {
 
   return (
     <div className="print-area" style={{background:"white",maxWidth:orientation==="portrait"?780:1060,margin:"0 auto",
-      padding:"16px 20px",boxShadow:"0 4px 24px rgba(0,0,0,.12)",fontFamily:"Arial,sans-serif",
-      fontSize:"8pt",color:"#000",lineHeight:1.3}}>
-      <style>{`@media print { @page { size: A4 ${orientation}; margin: 8mm; } }`}</style>
+      padding:"10px 14px",boxShadow:"0 4px 24px rgba(0,0,0,.12)",fontFamily:"Arial,sans-serif",
+      fontSize:"7.5pt",color:"#000",lineHeight:1.2}}>
+      <style>{`@media print { @page { size: A4 ${orientation}; margin: 6mm; } }`}</style>
 
       <div style={{textAlign:"center",fontWeight:"bold",fontSize:"12pt",borderBottom:"2px solid #000",paddingBottom:6,marginBottom:4}}>
         COSHH Assessment Form - Subject to Control of Substances Hazardous to Health Regulations
