@@ -663,11 +663,9 @@ wel: Yes or No or Unknown`;
       let raw;
       if (isImage) {
         // Image: send directly to vision API
-        const uploadKey = settings.apiKey?.trim();
-        if (!uploadKey) throw new Error("No API key - please add your Anthropic API key in Settings.");
         const res = await fetch("https://round-feather-e5a3.u2cstevo.workers.dev", {
           method: "POST",
-          headers: {"Content-Type": "application/json", "anthropic-version": "2023-06-01", "x-api-key": uploadKey},
+          headers: {"Content-Type": "application/json", "anthropic-version": "2023-06-01", },
           body: JSON.stringify({
             model: "claude-haiku-4-5",
             max_tokens: 700,
@@ -691,11 +689,9 @@ wel: Yes or No or Unknown`;
           .replace(/(sds|msds|safety.?data.?sheet|en.uk|english|uk)/gi, "")
           .replace(/\s+/g, " ")
           .trim();
-        const pdfKey = settings.apiKey?.trim();
-        if (!pdfKey) throw new Error("No API key - please add your Anthropic API key in Settings.");
         const res = await fetch("https://round-feather-e5a3.u2cstevo.workers.dev", {
           method: "POST",
-          headers: {"Content-Type": "application/json", "anthropic-version": "2023-06-01", "anthropic-beta": "web-search-2025-03-05", "x-api-key": pdfKey},
+          headers: {"Content-Type": "application/json", "anthropic-version": "2023-06-01", "anthropic-beta": "web-search-2025-03-05"},
           body: JSON.stringify({
             model: "claude-haiku-4-5",
             max_tokens: 700,
@@ -772,9 +768,6 @@ substanceForm (pick one): Liquid,Solid,Gas / Vapour,Aerosol / Spray,Powder / Dus
 wel: Yes or No or Unknown
 Return ONLY the JSON object, no other text.`;
 
-    const apiKey = settings.apiKey?.trim();
-    if (!apiKey) throw new Error("No API key - please add your Anthropic API key in (settings) Settings first.");
-
     const callAPI = async (messages, maxUses=1) => {
       const res = await fetch("https://round-feather-e5a3.u2cstevo.workers.dev", {
         method:"POST",
@@ -782,7 +775,6 @@ Return ONLY the JSON object, no other text.`;
           "Content-Type":"application/json",
           "anthropic-version":"2023-06-01",
           "anthropic-beta":"web-search-2025-03-05",
-          "x-api-key": apiKey
         },
         body: JSON.stringify({
           model:"claude-haiku-4-5",
@@ -834,26 +826,72 @@ For sourceUrl, use the direct PDF download URL from countysuppliesonline.hants.g
       try {
         const data1 = await callAPI([{role:"user", content:stage1Prompt}], 2);
         const extracted = extractResult(data1);
-        // Only use this result if we got a meaningful product name back
         if (extracted.json.productName || extracted.json.manufacturer || extracted.sdsUrl) {
           result = extracted;
-          source = "hcc"; // found on HCC County Supplies
+          source = "hcc";
         }
-      } catch(e) {
-        // Stage 1 failed silently - proceed to stage 2
-      }
+      } catch(e) {}
 
-      // -- STAGE 2: Fall back to general SDS search --
+      // -- STAGE 2: Targeted search based on product type --
       if (!result) {
-        setAiStatus({type:"loading", msg:`🔍 Not found on County Supplies - searching manufacturer SDS...`});
+        // Detect product category to target the right sources
+        const q = aiQuery.toLowerCase();
+        const isPaint = /paint|primer|varnish|gloss|emulsion|masonry|undercoat|stain|ronseal|dulux|hammerite|sadolin/.test(q);
+        const isSolvent = /white spirit|solvent|thinner|thinners|methylated|acetone|turpentine|turps/.test(q);
+        const isAdhesive = /glue|adhesive|sealant|silicone|no more nails|grab adhesive|wood glue|pva/.test(q);
+        const isDIY = /wd.?40|lubricant|rust|penetrating|spray paint|aerosol|filler|polyfilla/.test(q);
 
-        const stage2Prompt = `Find the official UK Safety Data Sheet (SDS/MSDS) for the cleaning product "${aiQuery}".
-Check manufacturer websites and SDS databases.
+        let targetSites = "";
+        if (isPaint) {
+          targetSites = "Check dulux.co.uk, ronseal.co.uk, hammerite.com, or the brand manufacturer website for their SDS/safety data sheet.";
+          setAiStatus({type:"loading", msg:`🔍 Searching paint/coating manufacturer for "${aiQuery}"...`});
+        } else if (isSolvent) {
+          targetSites = "Check HSE chemical database at hse.gov.uk, or the product manufacturer website. White spirit and solvents are often listed on trade supplier sites like screwfix.com or toolstation.com.";
+          setAiStatus({type:"loading", msg:`🔍 Searching solvent/chemical databases for "${aiQuery}"...`});
+        } else if (isAdhesive) {
+          targetSites = "Check the manufacturer website (e.g. unibond.co.uk, evo-stik.co.uk, henkel.com, bostik.com) for the Safety Data Sheet.";
+          setAiStatus({type:"loading", msg:`🔍 Searching adhesive/sealant manufacturer for "${aiQuery}"...`});
+        } else if (isDIY) {
+          targetSites = "Check screwfix.com, toolstation.com, or the brand manufacturer website for the SDS. WD-40 SDS is at wd40.co.uk.";
+          setAiStatus({type:"loading", msg:`🔍 Searching DIY product databases for "${aiQuery}"...`});
+        } else {
+          targetSites = "Check manufacturer websites, Screwfix, Toolstation, or chemical supplier SDS databases.";
+          setAiStatus({type:"loading", msg:`🔍 Searching supplier databases for "${aiQuery}"...`});
+        }
+
+        const stage2Prompt = `Find the official UK Safety Data Sheet (SDS/MSDS) for "${aiQuery}".
+${targetSites}
+Also try searching: "${aiQuery} safety data sheet UK filetype:pdf" or "${aiQuery} SDS MSDS UK".
+Extract all safety data from the SDS you find.
 Return ONLY this JSON: ${JSON_SCHEMA}
 ${JSON_RULES}`;
 
-        const data2 = await callAPI([{role:"user", content:stage2Prompt}], 2);
-        result = extractResult(data2);
+        try {
+          const data2 = await callAPI([{role:"user", content:stage2Prompt}], 3);
+          const extracted = extractResult(data2);
+          if (extracted.json.productName || extracted.json.manufacturer || extracted.sdsUrl) {
+            result = extracted;
+            source = "manufacturer";
+          }
+        } catch(e) {}
+      }
+
+      // -- STAGE 3: Broad fallback search --
+      if (!result) {
+        setAiStatus({type:"loading", msg:`🔍 Trying broader search for "${aiQuery}"...`});
+
+        const stage3Prompt = `I need the UK Safety Data Sheet for a product called "${aiQuery}" used in a school.
+Search for:
+1. "${aiQuery} SDS safety data sheet"
+2. "${aiQuery} MSDS UK"
+3. The product on any chemical supplier or trade website
+
+Extract whatever safety information you can find.
+Return ONLY this JSON: ${JSON_SCHEMA}
+${JSON_RULES}`;
+
+        const data3 = await callAPI([{role:"user", content:stage3Prompt}], 3);
+        result = extractResult(data3);
         source = "general";
       }
 
@@ -864,12 +902,14 @@ ${JSON_RULES}`;
         reviewDate: f.reviewDate || nextYear(),
         sdsUrl: sdsUrl || f.sdsUrl,
         sdsAttached: sdsUrl ? "Online" : f.sdsAttached,
-        sdsSource: source === "hcc" ? "AI - County Supplies" : "AI - Manufacturer SDS",
+        sdsSource: source === "hcc" ? "AI - County Supplies" : source === "manufacturer" ? "AI - Manufacturer" : "AI - General Search",
       }));
 
       const sourceLabel = source === "hcc"
         ? `v Found on <strong>Hampshire County Supplies</strong>.`
-        : `v Found via manufacturer SDS.`;
+        : source === "manufacturer"
+        ? `v Found on <strong>manufacturer/supplier website</strong>.`
+        : `v Found via general SDS search.`;
       const urlPart = sdsUrl
         ? ` <a href="${sdsUrl}" target="_blank" style="color:${GREEN};font-weight:600">View source SDS -></a>`
         : " Please review all fields before saving.";
@@ -1124,7 +1164,7 @@ ${JSON_RULES}`;
                             })()}
                           </td>
                           <td style={{padding:"12px 14px",whiteSpace:"nowrap"}}>
-                            <button onClick={()=>editProduct(p.id)} style={{...S.btn("ghost"),marginRight:4,fontSize:12,padding:"5px 10px"}}>Edit Edit</button>
+                            <button onClick={()=>editProduct(p.id)} style={{...S.btn("ghost"),marginRight:4,fontSize:12,padding:"5px 10px"}}>Edit</button>
                             <button onClick={()=>{setPrintData(p);setTab("print");}} style={{...S.btn("ghost"),marginRight:4,fontSize:12,padding:"5px 10px"}}>🖨</button>
                             {(p.sdsData||p.sdsUrl) && (
                               <button onClick={()=>viewSDS(p)} style={{...S.btn("ghost"),marginRight:4,fontSize:12,padding:"5px 10px",color:GREEN}} title="View original SDS">📄 SDS</button>
@@ -1465,11 +1505,6 @@ ${JSON_RULES}`;
                   <div style={{color:"rgba(255,255,255,.6)",fontSize:12,marginTop:2}}>Checks Hampshire County Supplies first, then manufacturer SDS</div>
                 </div>
                 <div style={{padding:16}}>
-                  {!settings.apiKey && (
-                    <div style={{background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:6,padding:"8px 12px",marginBottom:10,fontSize:12,color:"#92400e"}}>
-                      (!) Add your Anthropic API key in <strong>Settings</strong> to enable AI search.
-                    </div>
-                  )}
                   <div style={{display:"flex",gap:8,marginBottom:8}}>
                     <input value={aiQuery} onChange={e=>setAiQuery(e.target.value)}
                       onKeyDown={e=>e.key==="Enter"&&runAiSearch()}
@@ -1609,23 +1644,9 @@ ${JSON_RULES}`;
                 <Field label="Default Manager Name"><Input value={settings.managerName} onChange={v=>setSettings(s=>({...s,managerName:v}))} /></Field>
               </div>
 
-              <div style={S.secTitle}>AI Search - Anthropic API Key</div>
-              <div style={{fontSize:13,color:"#64748b",marginBottom:12,lineHeight:1.6}}>
-                Required for AI auto-fill and SDS search. Get a free key at <a href="https://console.anthropic.com" target="_blank" style={{color:"#00b050"}}>console.anthropic.com</a> -> API Keys. Your key is stored locally in your browser only - never shared.
-              </div>
-              <div style={{...S.grid2,marginBottom:14}}>
-                <Field label="Anthropic API Key" span2>
-                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                    <input
-                      type="password"
-                      value={settings.apiKey||""}
-                      onChange={e=>setSettings(s=>({...s,apiKey:e.target.value}))}
-                      placeholder="sk-ant-..."
-                      style={{...S.input,flex:1,fontFamily:"monospace",fontSize:13}}
-                    />
-                    {settings.apiKey && <span style={{fontSize:12,color:"#00b050",whiteSpace:"nowrap"}}>v Key saved</span>}
-                  </div>
-                </Field>
+              <div style={S.secTitle}>AI Search</div>
+              <div style={{background:"#e6f7ee",border:"1px solid #b3e6cc",borderRadius:8,padding:"12px 16px",marginBottom:14,fontSize:13,color:"#1a5c32"}}>
+                v AI-powered SDS search is included with your subscription. No API key required.
               </div>
 
               <div style={{...S.grid2,marginBottom:14}}>
