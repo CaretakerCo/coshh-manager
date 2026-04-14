@@ -3,17 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>COSHH Manager - Hampshire Schools</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-  <style>* { box-sizing: border-box; margin: 0; padding: 0; } body { font-family: 'DM Sans', system-ui, sans-serif; background: #f8fafc; }</style>
-</head>
-<body>
-  <div id="root"></div>
-  <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <title>COSHH Manager</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/react@18.2.0/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
-  <script type="text/babel" data-type="module">
+</head>
+<body style="margin:0;padding:0;background:#f1f5f9;">
+  <div id="root"></div>
+  <script type="text/plain" id="app-src">
 const { useState, useEffect, useCallback, useRef } = React;
 
 // --- SUPABASE CONFIG ----------------------------------------------------------
@@ -490,7 +488,7 @@ function App() {
   const [products, setProducts] = useState([]);
   const [settings, setSettings] = useState(() => load("coshh_settings", {
     schoolName:"", schoolAddress:"", assessorName:"", assessorTitle:"",
-    managerName:"", email:"", reminderDays:60, emailLastSent:{}, apiKey:""
+    managerName:"", managerTitle:"", email:"", reminderDays:60, emailLastSent:{}, apiKey:""
   }));
   const [form, setForm] = useState({...BLANK, assessDate:today(), reviewDate:nextYear()});
   const [editingId, setEditingId] = useState(null);
@@ -501,6 +499,8 @@ function App() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [sdsLoading, setSdsLoading] = useState(false);
   const [emailStatus, setEmailStatus] = useState(null); // null | "sent" | "no-email" | "nothing-due"
+  const [aiReviewed, setAiReviewed] = useState(false);
+  const [aiUsed, setAiUsed] = useState(false);
   const [dataLoading, setDataLoading] = useState(false);
   const [printOrientation, setPrintOrientation] = useState("landscape");
 
@@ -561,6 +561,7 @@ function App() {
             assessorName: school.assessor_name || s.assessorName,
             assessorTitle: school.assessor_title || s.assessorTitle,
             managerName: school.manager_name || s.managerName,
+            managerTitle: school.manager_title || s.managerTitle,
             reminderDays: school.reminder_days || s.reminderDays,
           }));
         } else {
@@ -693,6 +694,8 @@ wel: Yes or No or Unknown`;
         reviewDate: f.reviewDate || nextYear(),
       }));
       setAiStatus({type:"success", msg:`v SDS data extracted from "${file.name}" - please review all fields before saving.`});
+      setAiUsed(true);
+      setAiReviewed(false);
 
     } catch(e) {
       console.error("Upload error:", e);
@@ -805,15 +808,18 @@ For sourceUrl, use the direct PDF download URL from countysuppliesonline.hants.g
 
       // -- STAGE 2: Targeted search based on product type --
       if (!result) {
-        // Detect product category to target the right sources
         const q = aiQuery.toLowerCase();
+        const isCleenol = /cleenol|autocleen|british nova|crystalbrite|evolution x2|evolution|medisan|mixxit|osmos|edencleen|easidose|steritec|envirological|show.?me/.test(q);
         const isPaint = /paint|primer|varnish|gloss|emulsion|masonry|undercoat|stain|ronseal|dulux|hammerite|sadolin/.test(q);
         const isSolvent = /white spirit|solvent|thinner|thinners|methylated|acetone|turpentine|turps/.test(q);
         const isAdhesive = /glue|adhesive|sealant|silicone|no more nails|grab adhesive|wood glue|pva/.test(q);
         const isDIY = /wd.?40|lubricant|rust|penetrating|spray paint|aerosol|filler|polyfilla/.test(q);
 
         let targetSites = "";
-        if (isPaint) {
+        if (isCleenol) {
+          targetSites = "Search cleenol.com/brands-sds-files for the product SDS. Cleenol brands include Cleenol, Autocleen, British Nova, Crystalbrite, Evolution, Medisan, Mixxit, Osmos, Edencleen, Easidose, Steritec, Show-me. Find the correct brand page and locate the PDF SDS file.";
+          setAiStatus({type:"loading", msg:`🔍 Searching Cleenol SDS database for "${aiQuery}"...`});
+        } else if (isPaint) {
           targetSites = "Check dulux.co.uk, ronseal.co.uk, hammerite.com, or the brand manufacturer website for their SDS/safety data sheet.";
           setAiStatus({type:"loading", msg:`🔍 Searching paint/coating manufacturer for "${aiQuery}"...`});
         } else if (isSolvent) {
@@ -885,6 +891,8 @@ ${JSON_RULES}`;
         ? ` <a href="${sdsUrl}" target="_blank" style="color:${GREEN};font-weight:600">View source SDS -></a>`
         : " Please review all fields before saving.";
       setAiStatus({type:"success", msg: sourceLabel + urlPart, isHtml:true});
+      setAiUsed(true);
+      setAiReviewed(false);
 
     } catch(e) {
       console.error("Search error:", e);
@@ -907,6 +915,7 @@ ${JSON_RULES}`;
           assessor_name: settings.assessorName,
           assessor_title: settings.assessorTitle,
           manager_name: settings.managerName,
+          manager_title: settings.managerTitle,
           reminder_days: settings.reminderDays,
         });
         setSchoolId(sId);
@@ -939,7 +948,7 @@ ${JSON_RULES}`;
         sId = await supa.upsertSchool(token, session.userId, {
           school_name: settings.schoolName, school_address: settings.schoolAddress,
           assessor_name: settings.assessorName, assessor_title: settings.assessorTitle,
-          manager_name: settings.managerName, reminder_days: settings.reminderDays,
+          manager_name: settings.managerName, manager_title: settings.managerTitle, reminder_days: settings.reminderDays,
         });
         setSchoolId(sId);
       }
@@ -963,18 +972,26 @@ ${JSON_RULES}`;
   const editProduct = (id) => {
     const p = products.find(x => x.id === id);
     if (!p) return;
-    setForm({...BLANK, ...p});
+    setForm({...BLANK, ...p,
+      assessorName: p.assessorName || settings.assessorName,
+      assessorTitle: p.assessorTitle || settings.assessorTitle,
+      managerName: p.managerName || settings.managerName,
+    });
     setEditingId(id);
     setAiStatus(null);
+    setAiReviewed(false);
+    setAiUsed(false);
     setTab("form");
   };
 
   const newAssessment = () => {
     setForm({...BLANK, assessDate:today(), reviewDate:nextYear(),
       assessorName:settings.assessorName, assessorTitle:settings.assessorTitle,
-      managerName:settings.managerName});
+      managerName:settings.managerName, managerTitle:settings.managerTitle});
     setEditingId(null);
     setAiStatus(null);
+    setAiReviewed(false);
+    setAiUsed(false);
     setTab("form");
   };
 
@@ -1500,10 +1517,32 @@ ${JSON_RULES}`;
                   <strong>Important:</strong> Original risk assessments must be kept for <strong>40 years</strong>. On completion, print and place in your local health and safety folder.
                 </div>
               </div>
-              <div style={{...S.cardHead,borderTop:"1px solid #e2e8f0",borderBottom:"none",justifyContent:"flex-end",gap:10,background:"#f8fafc"}}>
-                <button style={S.btn("ghost")} onClick={()=>{setForm({...BLANK,assessDate:today(),reviewDate:nextYear()});setAiStatus(null);}}>Clear</button>
-                <button style={S.btn("ghost")} onClick={saveAndPrint}>🖨 Save & Print Preview</button>
-                <button style={S.btn("green")} onClick={saveProduct}>💾 Save Assessment</button>
+              <div style={{...S.cardHead,borderTop:"1px solid #e2e8f0",borderBottom:"none",flexDirection:"column",gap:10,background:"#f8fafc",alignItems:"stretch"}}>
+                {aiUsed && (
+                  <div style={{marginBottom:4}}>
+                    <div style={{background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:6,padding:"10px 14px",marginBottom:10}}>
+                      <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                        <span style={{fontSize:16,marginTop:1}}>⚠️</span>
+                        <div>
+                          <div style={{fontSize:13,fontWeight:600,color:"#92400e",marginBottom:3}}>AI-generated content — review required</div>
+                          <div style={{fontSize:12,color:"#92400e",lineHeight:1.6}}>Product safety data may have changed since this was retrieved. Always verify all fields against the current Safety Data Sheet (SDS) before saving. The responsible person remains accountable for the accuracy of this assessment.</div>
+                        </div>
+                      </div>
+                    </div>
+                    <label style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 14px",background:"white",border:"1px solid #cbd5e1",borderRadius:6,cursor:"pointer",fontSize:13,color:"#334155",lineHeight:1.5}}>
+                      <input type="checkbox" checked={aiReviewed} onChange={e=>{setAiReviewed(e.target.checked);}}
+                        style={{marginTop:2,width:15,height:15,accentColor:GREEN,cursor:"pointer",flexShrink:0}} />
+                      I confirm I have reviewed all AI-generated content in this assessment and verified it against the current Safety Data Sheet (SDS).
+                    </label>
+                  </div>
+                )}
+                <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
+                  <button style={S.btn("ghost")} onClick={()=>{setForm({...BLANK,assessDate:today(),reviewDate:nextYear()});setAiStatus(null);setAiUsed(false);setAiReviewed(false);}}>Clear</button>
+                  <button style={{...S.btn("ghost"),opacity:(aiUsed&&!aiReviewed)?0.4:1,cursor:(aiUsed&&!aiReviewed)?"not-allowed":"pointer"}}
+                    onClick={()=>{if(aiUsed&&!aiReviewed){alert("Please confirm you have reviewed the AI-generated content before saving.");return;}saveAndPrint();}}>🖨 Save & Print Preview</button>
+                  <button style={{...S.btn("green"),opacity:(aiUsed&&!aiReviewed)?0.4:1,cursor:(aiUsed&&!aiReviewed)?"not-allowed":"pointer"}}
+                    onClick={()=>{if(aiUsed&&!aiReviewed){alert("Please confirm you have reviewed the AI-generated content before saving.");return;}saveProduct();}}>💾 Save Assessment</button>
+                </div>
               </div>
             </div>
 
@@ -1619,7 +1658,7 @@ ${JSON_RULES}`;
         {/* -- SETTINGS -- */}
         {tab === "settings" && (
           <div style={{...S.card,maxWidth:540}}>
-            <div style={S.cardHead}><span style={{fontWeight:700,color:NAVY}}>(settings) Settings</span></div>
+            <div style={S.cardHead}><span style={{fontWeight:700,color:NAVY}}>Settings</span></div>
             <div style={S.cardBody}>
 
               {/* Subscription status */}
@@ -1653,6 +1692,7 @@ ${JSON_RULES}`;
                 <Field label="Default Assessor Name"><Input value={settings.assessorName} onChange={v=>setSettings(s=>({...s,assessorName:v}))} /></Field>
                 <Field label="Default Assessor Title"><Input value={settings.assessorTitle} onChange={v=>setSettings(s=>({...s,assessorTitle:v}))} placeholder="e.g. Site Manager" /></Field>
                 <Field label="Default Manager Name"><Input value={settings.managerName} onChange={v=>setSettings(s=>({...s,managerName:v}))} /></Field>
+                <Field label="Default Manager Title"><Input value={settings.managerTitle||""} onChange={v=>setSettings(s=>({...s,managerTitle:v}))} placeholder="e.g. Headteacher" /></Field>
               </div>
 
               <div style={S.secTitle}>AI Search</div>
@@ -1740,6 +1780,7 @@ ${JSON_RULES}`;
                     assessor_name: settings.assessorName,
                     assessor_title: settings.assessorTitle,
                     manager_name: settings.managerName,
+                    manager_title: settings.managerTitle,
                     reminder_days: settings.reminderDays,
                   });
                   setSchoolId(sId);
@@ -1958,8 +1999,15 @@ function PrintPreview({p, school, addr, orientation="landscape"}) {
   );
 }
 
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(React.createElement(App));
+  </script>
+  <script>
+    window.addEventListener("load", function() {
+      const src = document.getElementById("app-src").textContent;
+      const transformed = Babel.transform(src, { presets: ["react"] }).code;
+      eval(transformed);
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(React.createElement(App));
+    });
   </script>
 </body>
 </html>
