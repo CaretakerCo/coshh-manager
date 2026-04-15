@@ -435,12 +435,27 @@ function LoginScreen({ onLogin }) {
 
   return (
     <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{textAlign:"center",marginBottom:32}}>
-        <div style={{width:56,height:56,background:NAVY,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 12px"}}>🛡</div>
-        <div style={{fontSize:22,fontWeight:800,color:NAVY}}>COSHH Manager</div>
-        <div style={{fontSize:13,color:"#64748b",marginTop:4}}>Hampshire County Council Template</div>
+      <div style={{textAlign:"center",marginBottom:28,maxWidth:480}}>
+        <div style={{width:64,height:64,background:NAVY,borderRadius:16,display:"flex",alignItems:"center",justifyContent:"center",fontSize:32,margin:"0 auto 14px"}}>🛡</div>
+        <div style={{fontSize:26,fontWeight:800,color:NAVY,marginBottom:6}}>COSHH Manager</div>
+        <div style={{fontSize:14,color:"#334155",marginBottom:16,lineHeight:1.6}}>
+          The fast, simple way for school caretakers and site managers to complete, store and manage COSHH assessments — built on the Hampshire County Council template.
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:8}}>
+          {[
+            ["⚡","AI auto-fill from Safety Data Sheets — saves hours of form filling"],
+            ["☁️","Secure cloud storage — access from any device, any school"],
+            ["📋","Full HCC-compliant assessment form with print-ready output"],
+            ["⏰","Automatic review reminders so nothing gets missed"],
+          ].map(([icon,text]) => (
+            <div key={text} style={{display:"flex",alignItems:"flex-start",gap:8,textAlign:"left",background:"white",border:"1px solid #e2e8f0",borderRadius:8,padding:"8px 12px"}}>
+              <span style={{fontSize:15,flexShrink:0}}>{icon}</span>
+              <span style={{fontSize:13,color:"#334155",lineHeight:1.4}}>{text}</span>
+            </div>
+          ))}
+        </div>
       </div>
-      <div style={{background:"white",borderRadius:12,boxShadow:"0 4px 24px rgba(0,0,0,.08)",border:"1px solid #e2e8f0",padding:32,width:"100%",maxWidth:380}}>
+      <div style={{background:"white",borderRadius:12,boxShadow:"0 4px 24px rgba(0,0,0,.08)",border:"1px solid #e2e8f0",padding:32,width:"100%",maxWidth:400}}>
         <div style={{fontWeight:700,fontSize:18,color:NAVY,marginBottom:6}}>{mode==="login" ? "Sign in to your account" : "Create your account"}</div>
         <div style={{fontSize:13,color:"#64748b",marginBottom:24}}>
           {mode==="login" ? "Your COSHH assessments are securely stored in the cloud." : "Start your free account - all assessments saved securely."}
@@ -470,7 +485,11 @@ function LoginScreen({ onLogin }) {
           </div>
         </div>
       </div>
-      <div style={{marginTop:20,fontSize:12,color:"#94a3b8",textAlign:"center"}}>🔒 Secured by Supabase . Data stored in UK cloud</div>
+      <div style={{marginTop:20,fontSize:12,color:"#94a3b8",textAlign:"center",lineHeight:1.8}}>
+        🔒 Secured by Supabase · Data stored in UK cloud<br/>
+        <span style={{color:"#94a3b8"}}>Interested in COSHH Manager for your school? </span>
+        <a href="mailto:hello@caretakerco.co.uk" style={{color:GREEN,fontWeight:600,textDecoration:"none"}}>hello@caretakerco.co.uk</a>
+      </div>
     </div>
   );
 }
