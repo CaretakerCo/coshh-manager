@@ -174,7 +174,7 @@ const BLANK = {
   staffTrained:false, healthSurv:false, occupHealth:false, sysMonitored:false,
   staffTrainedDesc:"", healthSurvDesc:"", occupHealthDesc:"", sysMonitoredDesc:"",
   staffTrainedAction:"", healthSurvAction:"", occupHealthAction:"", sysMonitoredAction:"",
-  locationOfSDS:"", storage:"", useInstructions:"", controlMeasures:"", disposal:"",
+  productStorage:"", locationOfSDS:"", storage:"", useInstructions:"", controlMeasures:"", disposal:"",
   firstAid:"", fire:"", notes:"",
   assessorName:"", assessorTitle:"", managerName:"", managerTitle:"",
   savedAt:"", sdsUrl:"", sdsData:null, sdsFilename:"", sdsSource:"",
@@ -635,11 +635,12 @@ function App() {
       const isImage = mediaType.startsWith("image/");
 
       const prompt = `Extract all COSHH data from this Safety Data Sheet. Return ONLY this JSON with no other text:
-{"productName":"","manufacturer":"","mfrAddress":"","mfrTel":"","sdsRef":"","hPhrases":"","hazards":[],"substanceForm":"","routeOfEntry":[],"wel":"","storage":"","useInstructions":"","disposal":"","firstAid":"","fire":""}
+{"productName":"","manufacturer":"","mfrAddress":"","mfrTel":"","sdsRef":"","hPhrases":"","hazards":[],"substanceForm":"","routeOfEntry":[],"wel":"","storage":"","useInstructions":"","disposal":"","firstAid":"","fire":"","ventGeneral":false,"ventLEV":false,"airMonitor":false,"ventNA":false,"ventGeneralMech":"","ventLEVMech":"","airMonitorMech":"","preCreams":false,"gloves":false,"apron":false,"footwear":false,"skinNA":false,"glovesDesc":"","apronDesc":"","footwearType":"","halfMask":false,"fullMask":false,"dustMask":false,"respNA":false,"halfMaskDesc":"","fullMaskDesc":"","dustMaskDesc":"","safetySpecs":false,"goggles":false,"faceShield":false,"eyeNA":false,"safetySpecsDesc":"","gogglesDesc":"","faceShieldDesc":""}
 hazards array (include relevant): HealthHazard,AcuteToxicity,SeriousHealth,Oxidising,Explosive,Corrosive,Environmental,Flammable,GasesUnderPressure
 routeOfEntry array (include relevant): Inhalation,Skin contact,Eye contact,Ingestion,Skin absorption
 substanceForm (pick one): Liquid,Solid,Gas / Vapour,Aerosol / Spray,Powder / Dust,Gel / Paste,Foam
-wel: Yes or No or Unknown`;
+wel: Yes or No or Unknown
+For controls: set boolean true if the SDS recommends that control. Set the Desc/Mech fields to the specific detail from the SDS (e.g. glove material, respirator type, filter type). If no PPE of that type is required leave false and blank. If no ventilation requirements mentioned set ventNA true.`;
 
       let raw;
       if (isImage) {
@@ -670,7 +671,7 @@ wel: Yes or No or Unknown`;
           headers: {"Content-Type": "application/json", "anthropic-version": "2023-06-01", "anthropic-beta": "pdfs-2024-09-25"},
           body: JSON.stringify({
             model: "claude-haiku-4-5",
-            max_tokens: 1024,
+            max_tokens: 1500,
             messages: [{
               role: "user",
               content: [
@@ -740,12 +741,13 @@ wel: Yes or No or Unknown`;
   const runAiSearch = useCallback(async () => {
     if (!aiQuery.trim()) return;
 
-    const JSON_SCHEMA = `{"productName":"","manufacturer":"","mfrAddress":"","mfrTel":"","sdsRef":"","hPhrases":"","hazards":[],"substanceForm":"","routeOfEntry":[],"wel":"","storage":"","useInstructions":"","disposal":"","firstAid":"","fire":"","sourceUrl":""}`;
+    const JSON_SCHEMA = `{"productName":"","manufacturer":"","mfrAddress":"","mfrTel":"","sdsRef":"","hPhrases":"","hazards":[],"substanceForm":"","routeOfEntry":[],"wel":"","storage":"","useInstructions":"","disposal":"","firstAid":"","fire":"","sourceUrl":"","ventGeneral":false,"ventLEV":false,"airMonitor":false,"ventNA":false,"ventGeneralMech":"","ventLEVMech":"","airMonitorMech":"","preCreams":false,"gloves":false,"apron":false,"footwear":false,"skinNA":false,"glovesDesc":"","apronDesc":"","footwearType":"","halfMask":false,"fullMask":false,"dustMask":false,"respNA":false,"halfMaskDesc":"","fullMaskDesc":"","dustMaskDesc":"","safetySpecs":false,"goggles":false,"faceShield":false,"eyeNA":false,"safetySpecsDesc":"","gogglesDesc":"","faceShieldDesc":""}`;
     const JSON_RULES = `sourceUrl: direct URL of the COSHH/SDS PDF or product page found
 hazards (include relevant): HealthHazard,AcuteToxicity,SeriousHealth,Oxidising,Explosive,Corrosive,Environmental,Flammable,GasesUnderPressure
 routeOfEntry (include relevant): Inhalation,Skin contact,Eye contact,Ingestion,Skin absorption
 substanceForm (pick one): Liquid,Solid,Gas / Vapour,Aerosol / Spray,Powder / Dust,Gel / Paste,Foam
 wel: Yes or No or Unknown
+For controls: set boolean true if the SDS recommends that control. Set the Desc/Mech fields to specific detail from the SDS (e.g. glove material, respirator type). If no PPE of that type is required leave false and blank. If no ventilation requirements mentioned set ventNA true.
 Return ONLY the JSON object, no other text.`;
 
     const callAPI = async (messages, maxUses=1) => {
@@ -758,7 +760,7 @@ Return ONLY the JSON object, no other text.`;
         },
         body: JSON.stringify({
           model:"claude-haiku-4-5",
-          max_tokens:800,
+          max_tokens:1500,
           tools:[{type:"web_search_20250305", name:"web_search", max_uses:maxUses}],
           messages
         })
@@ -1328,6 +1330,9 @@ ${JSON_RULES}`;
                   <Field label="Substance used as a stand-alone product?">
                     <Select value={form.standalone} onChange={upd("standalone")}
                       options={["Yes","No"]} />
+                  </Field>
+                  <Field label="Where is the product stored?">
+                    <Input value={form.productStorage} onChange={upd("productStorage")} placeholder="e.g. Locked cleaning cupboard, Room 14" />
                   </Field>
                   <Field label="Used with a combination of substances?">
                     <Select value={form.accumulated} onChange={upd("accumulated")}
