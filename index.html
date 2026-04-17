@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>COSHH Manager</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1NiA1OSI+PHBhdGggZD0iTTQgNCBMNTIgNCBMNTIgNDIgUTUyIDU4IDI4IDY2IFE0IDU4IDQgNDIgWiIgZmlsbD0iIzFhNWMzMiIvPjxwYXRoIGQ9Ik04IDggTDQ4IDggTDQ4IDQyIFE0OCA1NSAyOCA2MiBROCA1NSA4IDQyIFoiIGZpbGw9IiMwMGIwNTAiLz48cG9seWxpbmUgcG9pbnRzPSIxNCwzOCAyMyw0OSA0MiwyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSI1LjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg==" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1NiA2NCI+PHBhdGggZD0iTTQgNCBMNTIgNCBMNTIgNDIgUTUyIDU4IDI4IDYzIFE0IDU4IDQgNDIgWiIgZmlsbD0iIzFhNWMzMiIvPjxwYXRoIGQ9Ik04IDggTDQ4IDggTDQ4IDQyIFE0OCA1NCAyOCA1OSBROCA1NCA4IDQyIFoiIGZpbGw9IiMwMGIwNTAiLz48cG9seWxpbmUgcG9pbnRzPSIxNCwzOCAyMyw0OSA0MiwyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSI1LjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg==" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/react@18.2.0/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.development.js"></script>
@@ -17,11 +17,10 @@ const { useState, useEffect, useCallback, useRef } = React;
 
 function ShieldLogo({size=32}) {
   const s = size;
-  const cx = s/2;
   return (
-    <svg width={s} height={s*1.05} viewBox="0 0 56 59" xmlns="http://www.w3.org/2000/svg">
-      <path d="M4 4 L52 4 L52 42 Q52 58 28 66 Q4 58 4 42 Z" fill="#1a5c32"/>
-      <path d="M8 8 L48 8 L48 42 Q48 55 28 62 Q8 55 8 42 Z" fill="#00b050"/>
+    <svg width={s} height={s*1.15} viewBox="0 0 56 64" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4 4 L52 4 L52 42 Q52 58 28 63 Q4 58 4 42 Z" fill="#1a5c32"/>
+      <path d="M8 8 L48 8 L48 42 Q48 54 28 59 Q8 54 8 42 Z" fill="#00b050"/>
       <polyline points="14,38 23,49 42,24" fill="none" stroke="white" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
   );
