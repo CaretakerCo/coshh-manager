@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+<!-- v1777382163 -->
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -13,7 +14,116 @@
 <body style="margin:0;padding:0;background:#f1f5f9;">
   <div id="root"></div>
   <script type="text/plain" id="app-src">
-const { useState, useEffect, useCallback } = React;
+const { useState, useEffect, useCallback, useRef } = React;
+
+// --- SUPABASE CONFIG ----------------------------------------------------------
+const SUPA_URL = "https://sygvcscvmkylymsdhens.supabase.co";
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN5Z3Zjc2N2bWt5bHltc2RoZW5zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU1MDgzNDAsImV4cCI6MjA5MTA4NDM0MH0.rr6g_BhkoeQZk9CpEDim4qCg0MRqWdrdrJsw9ihmbCE";
+
+const supa = {
+  headers: { "Content-Type": "application/json", "apikey": SUPA_KEY, "Authorization": `Bearer ${SUPA_KEY}` },
+
+  async signUp(email, password) {
+    const r = await fetch(`${SUPA_URL}/auth/v1/signup`, {
+      method:"POST", headers: this.headers,
+      body: JSON.stringify({ email, password })
+    });
+    return r.json();
+  },
+
+  async signIn(email, password) {
+    const r = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=password`, {
+      method:"POST", headers: this.headers,
+      body: JSON.stringify({ email, password })
+    });
+    return r.json();
+  },
+
+  async signOut(token) {
+    await fetch(`${SUPA_URL}/auth/v1/logout`, {
+      method:"POST",
+      headers: { ...this.headers, "Authorization": `Bearer ${token}` }
+    });
+  },
+
+  async refreshToken(refreshToken) {
+    const r = await fetch(`${SUPA_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method:"POST", headers: this.headers,
+      body: JSON.stringify({ refresh_token: refreshToken })
+    });
+    return r.json();
+  },
+
+  authHeaders(token) {
+    return { ...this.headers, "Authorization": `Bearer ${token}` };
+  },
+
+  async getSchool(token, userId) {
+    const r = await fetch(`${SUPA_URL}/rest/v1/schools?user_id=eq.${userId}&select=*`, {
+      headers: this.authHeaders(token)
+    });
+    const data = await r.json();
+    return Array.isArray(data) ? data[0] : null;
+  },
+
+  async upsertSchool(token, userId, schoolData) {
+    const existing = await this.getSchool(token, userId);
+    if (existing) {
+      await fetch(`${SUPA_URL}/rest/v1/schools?id=eq.${existing.id}`, {
+        method:"PATCH", headers: { ...this.authHeaders(token), "Prefer": "return=minimal" },
+        body: JSON.stringify(schoolData)
+      });
+      return existing.id;
+    } else {
+      const r = await fetch(`${SUPA_URL}/rest/v1/schools`, {
+        method:"POST", headers: { ...this.authHeaders(token), "Prefer": "return=representation" },
+        body: JSON.stringify({ ...schoolData, user_id: userId })
+      });
+      const data = await r.json();
+      return Array.isArray(data) ? data[0]?.id : data?.id;
+    }
+  },
+
+  async getAssessments(token, userId) {
+    const r = await fetch(`${SUPA_URL}/rest/v1/assessments?user_id=eq.${userId}&select=*&order=updated_at.desc`, {
+      headers: this.authHeaders(token)
+    });
+    const data = await r.json();
+    if (!Array.isArray(data)) return [];
+    return data.map(row => ({ ...row.data, id: row.id, _rowId: row.id }));
+  },
+
+  async upsertAssessment(token, userId, schoolId, assessment, refreshFn) {
+    const { id, _rowId, ...rest } = assessment;
+    const recordId = id || Date.now().toString();
+    let useToken = token;
+    const doSave = async (t) => fetch(`${SUPA_URL}/rest/v1/assessments`, {
+      method:"POST",
+      headers: { ...this.authHeaders(t), "Prefer": "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({
+        id: recordId, user_id: userId, school_id: schoolId,
+        data: { ...rest, id: recordId },
+        updated_at: new Date().toISOString()
+      })
+    });
+    let r = await doSave(useToken);
+    if (r.status === 401 && refreshFn) {
+      useToken = await refreshFn();
+      r = await doSave(useToken);
+    }
+    if (!r.ok) {
+      const errText = await r.text();
+      throw new Error(`Supabase save failed (${r.status}): ${errText}`);
+    }
+    return recordId;
+  },
+
+  async deleteAssessment(token, assessmentId) {
+    await fetch(`${SUPA_URL}/rest/v1/assessments?id=eq.${assessmentId}`, {
+      method:"DELETE", headers: this.authHeaders(token)
+    });
+  }
+};
 
 const HIMGS = {
   img1: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAF8AAABfCAMAAAC5kuvHAAADAFBMVEUAAQAAAgABBAACBQEEBwIFCAQHCQUICwcKDAgMDwsPEQ0RExATFBIVFhQaHBkbHBofIB4gIR8hIyApKygqLCkrLSosLSstLiwxMzAyMzE0NjP/AAD/AAA1NzT/AAf/ABP/ART/BhU7PTo9Pzw+QD0/QD5AQT9BQkBERkP+GRNKS0n/GxT/HB3/Hh7/HiX/ICZWWFVaXFn/MTVdX1xeYF1fYV5iZGFjZWL/PT3/PkRnaGZqbGlsbmv/R0VvcW5xc3B0dnN4end6fHl+gH1/gX6ChIGKjImLjYqOkI3/c3OQko+Rk5CUlpP/eXuVl5T/f33/goD/goadn5yeoJ3+hoefoZ7/h4igop//iIn/iYr/jYukpqP/joylp6T/j5L/kJOnqaapq6j+lJT/lZX/lpb/l5esrqutr6z+m5j/nJn/nZr/naD/nqH9oqK0trP+o6P/pKS2uLX/paX/pqa5u7j9qaa6vLn/qqf/rKn/rK//rbD/rrH9sLH+srL/s7PCxMH/tLTGyMXHycbJy8jKzMnLzsrO0MzQ0s/S1NH/y8rV19T9zsv+z8zY2tb/0M390NP/0c7/0dT61NX/1Nbc3tv81tb919f+2Nn/2drg4t//2tv/29z83dzj5eH93t3+397/4N/m6OX/4uD/4+H95uLq7On+5+P/6OX96Ovr7ur+6ezt7+v/6u3u8O3/7e/87u/w8u/x8/D98PDy9PH/8/T09/P/9PX2+PT99/b4+vf5+/j6/Pn7/fr//fv8//v+//z///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////9qxScWAAABAHRSTlP///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8AU/cHJQAAAAFiS0dEwBNh3/gAAAAEZ0lGZwAAAAp8We1TAAAADGNtUFBKQ21wMDcxMgAAAANIAHO8AAAGF0lEQVRoQ7Wa+2sdRRTH7wUpVeujVutjsYKvquUSX/X91vqsiloVKpY2AW0ImgghWhDfBqOx0iIkQoQW0ou1kSQ2RRuzzL/mmZ1zds7snHlsSPeH/LB39zNnvjtzvmdm0lEtrrJUKwr+tLg6LZ5VpZp+eBb+trja8Es1u6sYONGqgXw+6PLnTUVR9P5uI1ELvjqu8dDAXIseZPNLdbxX4YtioEUDmXwSxzTQQqJcvpo14mAD2R85j1+qY7sM+VWUKHeY5vFV/07DHSsPYw8W8yZBHn/OiLPjAEBfxwbms0ZRBr9URzH60SrmoTYSpfmlmkf8ZwpChuwwgj1YyEhFSX6pTtTimMxTqn3YQD/9DVJ8SGkY/QiDHciWKMGH6HFgHtGBm8tKNNBPSZSKfx7FGXJGS6neoW+QGEUJ/lGctUOe0tjAwGz8G8T4Vb6vrs+tOLVEH+E3iM+DMB+U7aM4hwURSrV/R9VCbzHmBxG++iUojulEjkRBfqlmcGCykcO1hlFEEkWyaYDPxBlxxFlbs22UCudBxA9CfHUMxRlkMf986Plnnn1tYsneopkcdDSZD/neF2fpvsu7+tq8/aA/0UINSHwmzqgVZ/n6il5dr1APSsqmIJE400S+mkFxdL6n6zGL73Yn7f03cB7IH1ngQ77HafUpj2kT5z9pO6DQ0eSqQoofp1UBeHZdwvlP819ilunxISkwM2SY2zj/fadplKgnpIom3+b70UbieoLzf3B/DFtmgw/5PjRr3+Z8Bx+zTJdvzXDQG22TjL+l0TdrmX80fnH4pfoJRw43Q3zjDOPf4Sf9gGVyvmiGNWn5CtvAU00+S3Z9p+eMb8VxzRBZ526xfHf4VA+AZaIfLPAGePzT0Xy/er/l/+jrA3f2oydzy6z5ETM0sLXnLP8vgQ8SjfqWiXyW0kRxNO/Nmn/lshi/ZJnEV+FKgVgf1xno9nMiH25S2VKX74YPZuiXUU3Gt1uoAw+synzBMjU/aIYu5betxN/DTNJ9xrPMik8rw4KboRfi+WuI/25IHn3ftUzgAz4tjn7zVuRv+iTMZ7VpZZkdJs5YopZ8BPmXfR+Lv7bMAb0Q78CnFcxQBLyM/Kt+j/HhN/IDsMyOmpbMUARMIH97YPjgS6AKWeas6qzcaybdvkRM8PNJ5O9MPlq+ZKCP/9tRU9nxK+Q/GudD/MOYKGYUjB/ctih4MSITtpkG9qbipyGq9YfWqAxPjR+12/C/jPJtybUIz1Xjn+qdQKVc476p8Fvjo7Ouqs34rx6mSj86f+G5Fy/qdq+Tk3/dKKW4ueqOyQ+1RG4x7gW6dmpiMpg79dOlGkSTwVUN5U9KEd5KK/Ut+e/MYqgarf0rbo65rQTyv5aIVrrSYo7wZ1+4+8HxYFvWvxbqwljw3y/kSh6w4/B5u92bz4gtQIhjfqnO64cpTHTDgQg/xPl7w2n5gWj9oIOmnRLZ4k9fTf4iTWBe/7Dm3foN96n89bp+Y3wz8e/6p9kBO3J67pZHo/6cEjZjiPVeXZ9sO+sLROO+sfHXrP9pp02Q6GDNv7bJt/spbvVJ+aEOp/4GhZ+Lvr6UGrjnvBO/LUt63paZv34hPxhrarBar5A+aP6UvX7Ro4jWX16y+/Vi04Hd/zX4Nt9730VaP+JMLmC/0L1O3ajxe5q30a16MGtz+LDEQ8usNiSd67u3Di01tSczFLeMpfitZab8QDfFzDAvfu4HKcvkZiiey8jxW8uM+gGrl9vsn1TdTG2OGS1cM8zUBx5jlsm2aBrve2aYz6+qasxFAT8QzLANH55NWaZnhq34zDKHo/uf1gxb8atUgRPtK2H/lhaj8aMeeXzWgZAf+JYpmWHL+LllulVFwAxb80EiskwmUdAM2/OhAaoqRtnbtG+bPgVL6K+ZTcsMm+E64mffwFQVG31+pJlsCQUhbvD5F7dMfUwSMcN16VO9RJZ5pIyZ4br51jLx9BGOdUQ78VrIGD/mHVplmjOXDT7/ZX5ARzqCFtKt7PitZV6I8/cqNNxCg/8fyL+y4693ueLnXc2W8/m4EXXB/n+jimzqodyBiR1pE78eRSvBxZ/8Tf4HyBHiBYZ7SiIAAAAASUVORK5CYII=",
@@ -66,25 +176,26 @@ const BLANK = {
   staffTrained:false, healthSurv:false, occupHealth:false, sysMonitored:false,
   staffTrainedDesc:"", healthSurvDesc:"", occupHealthDesc:"", sysMonitoredDesc:"",
   staffTrainedAction:"", healthSurvAction:"", occupHealthAction:"", sysMonitoredAction:"",
-  locationOfSDS:"", storage:"", useInstructions:"", controlMeasures:"", disposal:"",
+  productStorage:"", locationOfSDS:"", storage:"", useInstructions:"", controlMeasures:"", disposal:"",
   firstAid:"", fire:"", notes:"",
   assessorName:"", assessorTitle:"", managerName:"", managerTitle:"",
-  savedAt:"", sdsUrl:"", sdsData:null, sdsFilename:"",
+  savedAt:"", sdsUrl:"", sdsData:null, sdsFilename:"", sdsSource:"",
 };
 
 function today() { return new Date().toISOString().split("T")[0]; }
 function nextYear() { const d=new Date(); d.setFullYear(d.getFullYear()+1); return d.toISOString().split("T")[0]; }
-function fmtDate(d) { if(!d) return "—"; try { return new Date(d).toLocaleDateString("en-GB"); } catch(e) { return d; } }
+function fmtDate(d) { if(!d) return "-"; try { return new Date(d).toLocaleDateString("en-GB"); } catch(e) { return d; } }
 function statusInfo(reviewDate, days) {
   if (!reviewDate) return {label:"Unknown", cls:"due"};
   const diff = Math.floor((new Date(reviewDate)-new Date())/86400000);
-  if (diff < 0) return {label:"⚠ Overdue", cls:"overdue"};
-  if (diff <= days) return {label:"⏰ Due Soon", cls:"due"};
-  return {label:"✓ Current", cls:"current"};
+  if (diff < 0) return {label:"(!) Overdue", cls:"overdue"};
+  if (diff <= days) return {label:"(clock) Due Soon", cls:"due"};
+  return {label:"v Current", cls:"current"};
 }
 function load(key, def) { try { return JSON.parse(localStorage.getItem(key)||"null") || def; } catch(e) { return def; } }
+function saveLocal(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {} }
 
-// ── EMAIL REMINDER via mailto ──
+// -- EMAIL REMINDER via mailto --
 function buildReminderEmail(products, settings, rd) {
   const overdue = products.filter(p => {
     if (!p.reviewDate) return false;
@@ -98,16 +209,16 @@ function buildReminderEmail(products, settings, rd) {
   if (!overdue.length && !due.length) return null;
 
   const school = settings.schoolName || "Your School";
-  const lines = [`COSHH Assessment Review Reminder — ${school}`, `Generated: ${new Date().toLocaleDateString("en-GB")}`, ""];
+  const lines = [`COSHH Assessment Review Reminder - ${school}`, `Generated: ${new Date().toLocaleDateString("en-GB")}`, ""];
 
   if (overdue.length) {
     lines.push(`OVERDUE (${overdue.length}):`);
-    overdue.forEach(p => lines.push(`  • ${p.productName} — review was due ${new Date(p.reviewDate).toLocaleDateString("en-GB")}`));
+    overdue.forEach(p => lines.push(`  * ${p.productName} - review was due ${new Date(p.reviewDate).toLocaleDateString("en-GB")}`));
     lines.push("");
   }
   if (due.length) {
     lines.push(`DUE WITHIN ${rd} DAYS (${due.length}):`);
-    due.forEach(p => lines.push(`  • ${p.productName} — review due ${new Date(p.reviewDate).toLocaleDateString("en-GB")}`));
+    due.forEach(p => lines.push(`  * ${p.productName} - review due ${new Date(p.reviewDate).toLocaleDateString("en-GB")}`));
     lines.push("");
   }
   lines.push("Please log in to your COSHH Manager to update these assessments.");
@@ -115,7 +226,7 @@ function buildReminderEmail(products, settings, rd) {
   return lines.join("\n");
 }
 
-// ── EXPORT REGISTER TO CSV ──
+// -- EXPORT REGISTER TO CSV --
 function exportToCSV(products) {
   const headers = [
     "Product Name","Manufacturer","Location","Task","Assessment Date","Review Date",
@@ -154,9 +265,10 @@ function exportToCSV(products) {
   a.click();
   URL.revokeObjectURL(url);
 }
+// localStorage save kept for API key only
 function save(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {} }
 
-// ─── STYLES ───────────────────────────────────────────────────────────────────
+// --- STYLES -------------------------------------------------------------------
 const S = {
   app: { fontFamily:"DM Sans,system-ui,sans-serif", background:"#f8fafc", minHeight:"100vh" },
   header: { background:NAVY, padding:"0 24px", height:56, display:"flex", alignItems:"center",
@@ -209,7 +321,7 @@ const S = {
             display:"flex", alignItems:"center", gap:10 },
 };
 
-// ─── FIELD COMPONENTS ─────────────────────────────────────────────────────────
+// --- FIELD COMPONENTS ---------------------------------------------------------
 function Field({label, children, span2}) {
   return (
     <div style={{...S.fGroup, gridColumn:span2?"span 2":undefined}}>
@@ -280,13 +392,111 @@ function Spinner() {
     borderRadius:"50%",display:"inline-block",animation:"spin .7s linear infinite"}} />;
 }
 
-// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+// --- LOGIN SCREEN -------------------------------------------------------------
+function LoginScreen({ onLogin }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [mode, setMode] = useState("login"); // "login" | "signup"
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!email.trim() || !password.trim()) { setError("Please enter your email and password."); return; }
+    if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
+    setLoading(true); setError("");
+    try {
+      const data = mode === "signup" ? await supa.signUp(email, password) : await supa.signIn(email, password);
+      if (data.error || data.error_description) {
+        setError(data.error_description || data.error?.message || "Authentication failed.");
+      } else if (data.access_token) {
+        // Successful login or signup with auto-confirm
+        onLogin({ token: data.access_token, userId: data.user?.id || data.user_id, email, refreshToken: data.refresh_token });
+      } else if (mode === "signup" && (data.id || data.user?.id)) {
+        // Signup succeeded but needs email confirmation
+        setMode("login");
+        setError("");
+        setPassword("");
+        alert("Account created! You can now sign in.");
+      } else if (mode === "signup") {
+        // Try signing in immediately after signup
+        const loginData = await supa.signIn(email, password);
+        if (loginData.access_token) {
+          onLogin({ token: loginData.access_token, userId: loginData.user?.id || loginData.user_id, email, refreshToken: loginData.refresh_token });
+        } else {
+          setMode("login");
+          setError("Account created - please sign in.");
+        }
+      } else {
+        setError("Unexpected response - please try again.");
+      }
+    } catch(e) {
+      setError("Connection error - please check your internet and try again.");
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{textAlign:"center",marginBottom:28,maxWidth:480}}>
+        <div style={{width:64,height:64,background:NAVY,borderRadius:16,display:"flex",alignItems:"center",justifyContent:"center",fontSize:32,margin:"0 auto 14px"}}>🛡</div>
+        <div style={{fontSize:26,fontWeight:800,color:NAVY,marginBottom:6}}>COSHH Manager</div>
+        <div style={{fontSize:14,color:"#334155",marginBottom:16,lineHeight:1.6}}>
+          The fast, simple way for school caretakers and site managers to complete, store and manage COSHH assessments — built on the Hampshire County Council template.
+        </div>
+      </div>
+      <div style={{background:"white",borderRadius:12,boxShadow:"0 4px 24px rgba(0,0,0,.08)",border:"1px solid #e2e8f0",padding:32,width:"100%",maxWidth:400}}>
+        <div style={{fontWeight:700,fontSize:18,color:NAVY,marginBottom:6}}>{mode==="login" ? "Sign in to your account" : "Create your account"}</div>
+        <div style={{fontSize:13,color:"#64748b",marginBottom:24}}>
+          {mode==="login" ? "Your COSHH assessments are securely stored in the cloud." : "Start your free account - all assessments saved securely."}
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div>
+            <label style={{fontSize:12,fontWeight:600,color:"#334155",display:"block",marginBottom:5}}>Email address</label>
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)}
+              placeholder="e.g. caretaker@school.sch.uk"
+              onKeyDown={e=>e.key==="Enter"&&handleSubmit()}
+              style={{width:"100%",padding:"10px 12px",border:"1px solid #cbd5e1",borderRadius:7,fontFamily:"inherit",fontSize:14,boxSizing:"border-box",outline:"none"}} />
+          </div>
+          <div>
+            <label style={{fontSize:12,fontWeight:600,color:"#334155",display:"block",marginBottom:5}}>Password</label>
+            <input type="password" value={password} onChange={e=>setPassword(e.target.value)}
+              placeholder="Minimum 6 characters"
+              onKeyDown={e=>e.key==="Enter"&&handleSubmit()}
+              style={{width:"100%",padding:"10px 12px",border:"1px solid #cbd5e1",borderRadius:7,fontFamily:"inherit",fontSize:14,boxSizing:"border-box",outline:"none"}} />
+          </div>
+          {error && <div style={{background:"#fee2e2",border:"1px solid #fca5a5",borderRadius:7,padding:"10px 12px",fontSize:13,color:"#dc2626"}}>{error}</div>}
+          <button onClick={handleSubmit} disabled={loading}
+            style={{background:GREEN,color:"white",border:"none",borderRadius:7,padding:"11px 0",fontFamily:"inherit",fontSize:15,fontWeight:700,cursor:loading?"not-allowed":"pointer",opacity:loading?0.7:1,transition:"opacity .15s"}}>
+            {loading ? "Please wait..." : mode==="login" ? "Sign In" : "Create Account"}
+          </button>
+          <div style={{textAlign:"center",fontSize:13,color:"#64748b"}}>
+            {mode==="login" ? <>Don't have an account? <button onClick={()=>{setMode("signup");setError("");}} style={{background:"none",border:"none",color:GREEN,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>Sign up free</button></> : <>Already have an account? <button onClick={()=>{setMode("login");setError("");}} style={{background:"none",border:"none",color:GREEN,fontWeight:600,cursor:"pointer",fontFamily:"inherit",fontSize:13}}>Sign in</button></>}
+          </div>
+        </div>
+      </div>
+      <div style={{marginTop:20,fontSize:12,color:"#94a3b8",textAlign:"center",lineHeight:1.8}}>
+        🔒 Secured by Supabase · Data stored in UK cloud<br/>
+        <span style={{color:"#94a3b8"}}>Interested in COSHH Manager for your school? </span>
+        <a href="mailto:info@coshh-manager.co.uk" style={{color:GREEN,fontWeight:600,textDecoration:"none"}}>info@coshh-manager.co.uk</a>
+      </div>
+    </div>
+  );
+}
+
+// --- MAIN APP -----------------------------------------------------------------
 function App() {
+  // -- AUTH STATE --
+  const [session, setSession] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("coshh_session")||"null"); } catch(e) { return null; }
+  });
+  const [syncStatus, setSyncStatus] = useState(null); // null | "syncing" | "saved" | "error"
+  const [schoolId, setSchoolId] = useState(null);
+
   const [tab, setTab] = useState("register");
-  const [products, setProducts] = useState(() => load("coshh_products", []));
+  const [products, setProducts] = useState([]);
   const [settings, setSettings] = useState(() => load("coshh_settings", {
     schoolName:"", schoolAddress:"", assessorName:"", assessorTitle:"",
-    managerName:"", email:"", reminderDays:60, emailLastSent:{}, apiKey:""
+    managerName:"", managerTitle:"", email:"", reminderDays:60, emailLastSent:{}, apiKey:""
   }));
   const [form, setForm] = useState({...BLANK, assessDate:today(), reviewDate:nextYear()});
   const [editingId, setEditingId] = useState(null);
@@ -297,6 +507,110 @@ function App() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [sdsLoading, setSdsLoading] = useState(false);
   const [emailStatus, setEmailStatus] = useState(null); // null | "sent" | "no-email" | "nothing-due"
+  const [aiReviewed, setAiReviewed] = useState(false);
+  const [aiUsed, setAiUsed] = useState(false);
+  const [dataLoading, setDataLoading] = useState(false);
+  const [printOrientation, setPrintOrientation] = useState("landscape");
+
+  // -- HANDLE LOGIN --
+  const handleLogin = (sess) => {
+    localStorage.setItem("coshh_session", JSON.stringify(sess));
+    setSession(sess);
+  };
+
+  // -- REFRESH TOKEN IF EXPIRED --
+  const getValidToken = useCallback(async () => {
+    if (!session) return null;
+    // Try current token first - if it works, return it
+    // If we have a refresh token, use it to get a new access token
+    if (session.refreshToken) {
+      try {
+        const data = await supa.refreshToken(session.refreshToken);
+        if (data.access_token) {
+          const newSess = { ...session, token: data.access_token, refreshToken: data.refresh_token || session.refreshToken };
+          localStorage.setItem("coshh_session", JSON.stringify(newSess));
+          setSession(newSess);
+          return data.access_token;
+        }
+      } catch(e) {}
+    }
+    return session.token;
+  }, [session]);
+
+  // -- HANDLE LOGOUT --
+  const handleLogout = async () => {
+    if (session?.token) { try { await supa.signOut(session.token); } catch(e) {} }
+    localStorage.removeItem("coshh_session");
+    setSession(null);
+    setProducts([]);
+    setSchoolId(null);
+    setSubChecked(false);
+    setSubPlan(null);
+    setSubExpiry(null);
+  };
+
+  // -- LOAD DATA FROM SUPABASE ON LOGIN --
+  useEffect(() => {
+    if (!session) return;
+    const loadData = async () => {
+      setDataLoading(true);
+      try {
+        // Load school/settings
+        const school = await supa.getSchool(session.token, session.userId);
+        if (school) {
+          setSchoolId(school.id);
+          setSubExpiry(school.subscription_expires || null);
+          setSubPlan(school.subscription_plan || "trial");
+          setSubChecked(true);
+          setSettings(s => ({
+            ...s,
+            schoolName: school.school_name || s.schoolName,
+            schoolAddress: school.school_address || s.schoolAddress,
+            assessorName: school.assessor_name || s.assessorName,
+            assessorTitle: school.assessor_title || s.assessorTitle,
+            managerName: school.manager_name || s.managerName,
+            managerTitle: school.manager_title || s.managerTitle,
+            reminderDays: school.reminder_days || s.reminderDays,
+          }));
+        } else {
+          setSubChecked(true);
+        }
+        // Load assessments
+        const assessments = await supa.getAssessments(session.token, session.userId);
+        setProducts(assessments);
+      } catch(e) {
+        console.error("Load error:", e);
+      }
+      setDataLoading(false);
+    };
+    loadData();
+  }, [session]);
+
+  // -- SUBSCRIPTION STATE --
+  const [subExpiry, setSubExpiry] = useState(null);
+  const [subPlan, setSubPlan] = useState(null);
+  const [subChecked, setSubChecked] = useState(false);
+
+  // Check subscription when school loads
+  useEffect(() => {
+    if (!session) return;
+    const checkSub = async () => {
+      try {
+        const school = await supa.getSchool(session.token, session.userId);
+        if (school) {
+          setSubExpiry(school.subscription_expires || null);
+          setSubPlan(school.subscription_plan || "trial");
+        } else {
+          // No school record yet - treat as trial (just logged in)
+          setSubPlan("trial");
+        }
+      } catch(e) {}
+      setSubChecked(true);
+    };
+    checkSub();
+  }, [session]);
+
+  // -- SHOW LOGIN IF NOT AUTHENTICATED -- (moved below hooks)
 
   // Read uploaded file to base64, store it, then extract SDS data via AI
   const handleSdsUpload = useCallback(async (file) => {
@@ -323,20 +637,19 @@ function App() {
       const isImage = mediaType.startsWith("image/");
 
       const prompt = `Extract all COSHH data from this Safety Data Sheet. Return ONLY this JSON with no other text:
-{"productName":"","manufacturer":"","mfrAddress":"","mfrTel":"","sdsRef":"","hPhrases":"","hazards":[],"substanceForm":"","routeOfEntry":[],"wel":"","storage":"","useInstructions":"","disposal":"","firstAid":"","fire":""}
+{"productName":"","manufacturer":"","mfrAddress":"","mfrTel":"","sdsRef":"","hPhrases":"","hazards":[],"substanceForm":"","routeOfEntry":[],"wel":"","storage":"","useInstructions":"","disposal":"","firstAid":"","fire":"","ventGeneral":false,"ventLEV":false,"airMonitor":false,"ventNA":false,"ventGeneralMech":"","ventLEVMech":"","airMonitorMech":"","preCreams":false,"gloves":false,"apron":false,"footwear":false,"skinNA":false,"glovesDesc":"","apronDesc":"","footwearType":"","halfMask":false,"fullMask":false,"dustMask":false,"respNA":false,"halfMaskDesc":"","fullMaskDesc":"","dustMaskDesc":"","safetySpecs":false,"goggles":false,"faceShield":false,"eyeNA":false,"safetySpecsDesc":"","gogglesDesc":"","faceShieldDesc":""}
 hazards array (include relevant): HealthHazard,AcuteToxicity,SeriousHealth,Oxidising,Explosive,Corrosive,Environmental,Flammable,GasesUnderPressure
 routeOfEntry array (include relevant): Inhalation,Skin contact,Eye contact,Ingestion,Skin absorption
 substanceForm (pick one): Liquid,Solid,Gas / Vapour,Aerosol / Spray,Powder / Dust,Gel / Paste,Foam
-wel: Yes or No or Unknown`;
+wel: Yes or No or Unknown
+For controls: set boolean true if the SDS recommends that control. Set the Desc/Mech fields to the specific detail from the SDS (e.g. glove material, respirator type, filter type). If no PPE of that type is required leave false and blank. If no ventilation requirements mentioned set ventNA true.`;
 
       let raw;
       if (isImage) {
         // Image: send directly to vision API
-        const uploadKey = settings.apiKey?.trim();
-        if (!uploadKey) throw new Error("No API key — please add your Anthropic API key in Settings.");
         const res = await fetch("https://round-feather-e5a3.u2cstevo.workers.dev", {
           method: "POST",
-          headers: {"Content-Type": "application/json", "anthropic-version": "2023-06-01", "x-api-key": uploadKey},
+          headers: {"Content-Type": "application/json", "anthropic-version": "2023-06-01", },
           body: JSON.stringify({
             model: "claude-haiku-4-5",
             max_tokens: 700,
@@ -353,25 +666,20 @@ wel: Yes or No or Unknown`;
         const data = await res.json();
         raw = data.content.filter(b => b.type === "text").map(b => b.text).join("");
       } else {
-        // PDF: use web search to find SDS by filename/product name
-        const productHint = file.name
-          .replace(/[-_]/g, " ")
-          .replace(/\.pdf$/i, "")
-          .replace(/(sds|msds|safety.?data.?sheet|en.uk|english|uk)/gi, "")
-          .replace(/\s+/g, " ")
-          .trim();
-        const pdfKey = settings.apiKey?.trim();
-        if (!pdfKey) throw new Error("No API key — please add your Anthropic API key in Settings.");
+        // PDF: send actual PDF content to Claude to read directly
+        setAiStatus({type:"loading", msg:`Reading PDF "${file.name}"...`});
         const res = await fetch("https://round-feather-e5a3.u2cstevo.workers.dev", {
           method: "POST",
-          headers: {"Content-Type": "application/json", "anthropic-version": "2023-06-01", "anthropic-beta": "web-search-2025-03-05", "x-api-key": pdfKey},
+          headers: {"Content-Type": "application/json", "anthropic-version": "2023-06-01", "anthropic-beta": "pdfs-2024-09-25"},
           body: JSON.stringify({
             model: "claude-haiku-4-5",
-            max_tokens: 700,
-            tools: [{type: "web_search_20250305", name: "web_search", max_uses: 1}],
+            max_tokens: 1500,
             messages: [{
               role: "user",
-              content: `Find the UK Safety Data Sheet for "${productHint}" and extract its COSHH data. ${prompt}`
+              content: [
+                {type: "document", source: {type: "base64", media_type: "application/pdf", data: base64}},
+                {type: "text", text: prompt}
+              ]
             }]
           })
         });
@@ -381,19 +689,22 @@ wel: Yes or No or Unknown`;
       }
 
       const match = raw.match(/\{[\s\S]*\}/);
-      if (!match) throw new Error("Could not read SDS data — please fill in fields manually.");
+      if (!match) throw new Error("Could not read SDS data - please fill in fields manually.");
       const json = JSON.parse(match[0]);
 
       setForm(f => ({
         ...f,
         ...json,
-        sdsData: dataUrl,       // keep the file we already stored
-        sdsFilename: file.name, // keep filename
-        sdsAttached: "Yes",     // mark as attached
+        sdsData: dataUrl,
+        sdsFilename: file.name,
+        sdsAttached: "Yes",
+        sdsSource: "PDF Upload",
         assessDate: f.assessDate || today(),
         reviewDate: f.reviewDate || nextYear(),
       }));
-      setAiStatus({type:"success", msg:`✓ SDS data extracted from "${file.name}" — please review all fields before saving.`});
+      setAiStatus({type:"success", msg:`v SDS data extracted from "${file.name}" - please review all fields before saving.`});
+      setAiUsed(true);
+      setAiReviewed(false);
 
     } catch(e) {
       console.error("Upload error:", e);
@@ -416,8 +727,8 @@ wel: Yes or No or Unknown`;
     }
   };
 
-  useEffect(() => { save("coshh_products", products); }, [products]);
-  useEffect(() => { save("coshh_settings", settings); }, [settings]);
+  // API key still saved locally only (never to cloud)
+  useEffect(() => { save("coshh_settings", {apiKey: settings.apiKey}); }, [settings.apiKey]);
 
   const upd = (key) => (val) => setForm(f => ({...f, [key]:val}));
   const updCB = (key) => (val) => setForm(f => ({...f, [key]:val}));
@@ -428,20 +739,18 @@ wel: Yes or No or Unknown`;
     routeOfEntry: f.routeOfEntry.includes(val) ? f.routeOfEntry.filter(r=>r!==val) : [...f.routeOfEntry, val]
   }));
 
-  // ── AI SEARCH ──
+  // -- AI SEARCH --
   const runAiSearch = useCallback(async () => {
     if (!aiQuery.trim()) return;
 
-    const JSON_SCHEMA = `{"productName":"","manufacturer":"","mfrAddress":"","mfrTel":"","sdsRef":"","hPhrases":"","hazards":[],"substanceForm":"","routeOfEntry":[],"wel":"","storage":"","useInstructions":"","disposal":"","firstAid":"","fire":"","sourceUrl":""}`;
+    const JSON_SCHEMA = `{"productName":"","manufacturer":"","mfrAddress":"","mfrTel":"","sdsRef":"","hPhrases":"","hazards":[],"substanceForm":"","routeOfEntry":[],"wel":"","storage":"","useInstructions":"","disposal":"","firstAid":"","fire":"","sourceUrl":"","ventGeneral":false,"ventLEV":false,"airMonitor":false,"ventNA":false,"ventGeneralMech":"","ventLEVMech":"","airMonitorMech":"","preCreams":false,"gloves":false,"apron":false,"footwear":false,"skinNA":false,"glovesDesc":"","apronDesc":"","footwearType":"","halfMask":false,"fullMask":false,"dustMask":false,"respNA":false,"halfMaskDesc":"","fullMaskDesc":"","dustMaskDesc":"","safetySpecs":false,"goggles":false,"faceShield":false,"eyeNA":false,"safetySpecsDesc":"","gogglesDesc":"","faceShieldDesc":""}`;
     const JSON_RULES = `sourceUrl: direct URL of the COSHH/SDS PDF or product page found
 hazards (include relevant): HealthHazard,AcuteToxicity,SeriousHealth,Oxidising,Explosive,Corrosive,Environmental,Flammable,GasesUnderPressure
 routeOfEntry (include relevant): Inhalation,Skin contact,Eye contact,Ingestion,Skin absorption
 substanceForm (pick one): Liquid,Solid,Gas / Vapour,Aerosol / Spray,Powder / Dust,Gel / Paste,Foam
 wel: Yes or No or Unknown
+For controls: set boolean true if the SDS recommends that control. Set the Desc/Mech fields to specific detail from the SDS (e.g. glove material, respirator type). If no PPE of that type is required leave false and blank. If no ventilation requirements mentioned set ventNA true.
 Return ONLY the JSON object, no other text.`;
-
-    const apiKey = settings.apiKey?.trim();
-    if (!apiKey) throw new Error("No API key — please add your Anthropic API key in ⚙ Settings first.");
 
     const callAPI = async (messages, maxUses=1) => {
       const res = await fetch("https://round-feather-e5a3.u2cstevo.workers.dev", {
@@ -450,11 +759,10 @@ Return ONLY the JSON object, no other text.`;
           "Content-Type":"application/json",
           "anthropic-version":"2023-06-01",
           "anthropic-beta":"web-search-2025-03-05",
-          "x-api-key": apiKey
         },
         body: JSON.stringify({
           model:"claude-haiku-4-5",
-          max_tokens:800,
+          max_tokens:1500,
           tools:[{type:"web_search_20250305", name:"web_search", max_uses:maxUses}],
           messages
         })
@@ -486,7 +794,7 @@ Return ONLY the JSON object, no other text.`;
     };
 
     try {
-      // ── STAGE 1: Search Hampshire County Supplies first ──
+      // -- STAGE 1: Search Hampshire County Supplies first --
       setAiStatus({type:"loading", msg:`🔍 Checking Hampshire County Supplies for "${aiQuery}"...`});
 
       const stage1Prompt = `Search countysuppliesonline.hants.gov.uk for the cleaning product "${aiQuery}".
@@ -502,26 +810,75 @@ For sourceUrl, use the direct PDF download URL from countysuppliesonline.hants.g
       try {
         const data1 = await callAPI([{role:"user", content:stage1Prompt}], 2);
         const extracted = extractResult(data1);
-        // Only use this result if we got a meaningful product name back
         if (extracted.json.productName || extracted.json.manufacturer || extracted.sdsUrl) {
           result = extracted;
-          source = "hcc"; // found on HCC County Supplies
+          source = "hcc";
         }
-      } catch(e) {
-        // Stage 1 failed silently — proceed to stage 2
-      }
+      } catch(e) {}
 
-      // ── STAGE 2: Fall back to general SDS search ──
+      // -- STAGE 2: Targeted search based on product type --
       if (!result) {
-        setAiStatus({type:"loading", msg:`🔍 Not found on County Supplies — searching manufacturer SDS...`});
+        const q = aiQuery.toLowerCase();
+        const isCleenol = /cleenol|autocleen|british nova|crystalbrite|evolution x2|evolution|medisan|mixxit|osmos|edencleen|easidose|steritec|envirological|show.?me/.test(q);
+        const isPaint = /paint|primer|varnish|gloss|emulsion|masonry|undercoat|stain|ronseal|dulux|hammerite|sadolin/.test(q);
+        const isSolvent = /white spirit|solvent|thinner|thinners|methylated|acetone|turpentine|turps/.test(q);
+        const isAdhesive = /glue|adhesive|sealant|silicone|no more nails|grab adhesive|wood glue|pva/.test(q);
+        const isDIY = /wd.?40|lubricant|rust|penetrating|spray paint|aerosol|filler|polyfilla/.test(q);
 
-        const stage2Prompt = `Find the official UK Safety Data Sheet (SDS/MSDS) for the cleaning product "${aiQuery}".
-Check manufacturer websites and SDS databases.
+        let targetSites = "";
+        if (isCleenol) {
+          targetSites = "Search cleenol.com/brands-sds-files for the product SDS. Cleenol brands include Cleenol, Autocleen, British Nova, Crystalbrite, Evolution, Medisan, Mixxit, Osmos, Edencleen, Easidose, Steritec, Show-me. Find the correct brand page and locate the PDF SDS file.";
+          setAiStatus({type:"loading", msg:`🔍 Searching Cleenol SDS database for "${aiQuery}"...`});
+        } else if (isPaint) {
+          targetSites = "Check dulux.co.uk, ronseal.co.uk, hammerite.com, or the brand manufacturer website for their SDS/safety data sheet.";
+          setAiStatus({type:"loading", msg:`🔍 Searching paint/coating manufacturer for "${aiQuery}"...`});
+        } else if (isSolvent) {
+          targetSites = "Check HSE chemical database at hse.gov.uk, or the product manufacturer website. White spirit and solvents are often listed on trade supplier sites like screwfix.com or toolstation.com.";
+          setAiStatus({type:"loading", msg:`🔍 Searching solvent/chemical databases for "${aiQuery}"...`});
+        } else if (isAdhesive) {
+          targetSites = "Check the manufacturer website (e.g. unibond.co.uk, evo-stik.co.uk, henkel.com, bostik.com) for the Safety Data Sheet.";
+          setAiStatus({type:"loading", msg:`🔍 Searching adhesive/sealant manufacturer for "${aiQuery}"...`});
+        } else if (isDIY) {
+          targetSites = "Check screwfix.com, toolstation.com, or the brand manufacturer website for the SDS. WD-40 SDS is at wd40.co.uk.";
+          setAiStatus({type:"loading", msg:`🔍 Searching DIY product databases for "${aiQuery}"...`});
+        } else {
+          targetSites = "Check manufacturer websites, Screwfix, Toolstation, or chemical supplier SDS databases.";
+          setAiStatus({type:"loading", msg:`🔍 Searching supplier databases for "${aiQuery}"...`});
+        }
+
+        const stage2Prompt = `Find the official UK Safety Data Sheet (SDS/MSDS) for "${aiQuery}".
+${targetSites}
+Also try searching: "${aiQuery} safety data sheet UK filetype:pdf" or "${aiQuery} SDS MSDS UK".
+Extract all safety data from the SDS you find.
 Return ONLY this JSON: ${JSON_SCHEMA}
 ${JSON_RULES}`;
 
-        const data2 = await callAPI([{role:"user", content:stage2Prompt}], 2);
-        result = extractResult(data2);
+        try {
+          const data2 = await callAPI([{role:"user", content:stage2Prompt}], 3);
+          const extracted = extractResult(data2);
+          if (extracted.json.productName || extracted.json.manufacturer || extracted.sdsUrl) {
+            result = extracted;
+            source = "manufacturer";
+          }
+        } catch(e) {}
+      }
+
+      // -- STAGE 3: Broad fallback search --
+      if (!result) {
+        setAiStatus({type:"loading", msg:`🔍 Trying broader search for "${aiQuery}"...`});
+
+        const stage3Prompt = `I need the UK Safety Data Sheet for a product called "${aiQuery}" used in a school.
+Search for:
+1. "${aiQuery} SDS safety data sheet"
+2. "${aiQuery} MSDS UK"
+3. The product on any chemical supplier or trade website
+
+Extract whatever safety information you can find.
+Return ONLY this JSON: ${JSON_SCHEMA}
+${JSON_RULES}`;
+
+        const data3 = await callAPI([{role:"user", content:stage3Prompt}], 3);
+        result = extractResult(data3);
         source = "general";
       }
 
@@ -532,15 +889,20 @@ ${JSON_RULES}`;
         reviewDate: f.reviewDate || nextYear(),
         sdsUrl: sdsUrl || f.sdsUrl,
         sdsAttached: sdsUrl ? "Online" : f.sdsAttached,
+        sdsSource: source === "hcc" ? "AI - County Supplies" : source === "manufacturer" ? "AI - Manufacturer" : "AI - General Search",
       }));
 
       const sourceLabel = source === "hcc"
-        ? `✓ Found on <strong>Hampshire County Supplies</strong>.`
-        : `✓ Found via manufacturer SDS.`;
+        ? `v Found on <strong>Hampshire County Supplies</strong>.`
+        : source === "manufacturer"
+        ? `v Found on <strong>manufacturer/supplier website</strong>.`
+        : `v Found via general SDS search.`;
       const urlPart = sdsUrl
-        ? ` <a href="${sdsUrl}" target="_blank" style="color:${GREEN};font-weight:600">View source SDS →</a>`
+        ? ` <a href="${sdsUrl}" target="_blank" style="color:${GREEN};font-weight:600">View source SDS -></a>`
         : " Please review all fields before saving.";
       setAiStatus({type:"success", msg: sourceLabel + urlPart, isHtml:true});
+      setAiUsed(true);
+      setAiReviewed(false);
 
     } catch(e) {
       console.error("Search error:", e);
@@ -548,48 +910,102 @@ ${JSON_RULES}`;
     }
   }, [aiQuery]);
 
-  // ── SAVE ──
-  const saveProduct = () => {
+  // -- SAVE TO SUPABASE --
+  const saveProduct = async () => {
     if (!form.productName) { alert("Please enter a product name."); return; }
     const record = {...form, id: editingId || Date.now().toString(), savedAt: new Date().toISOString()};
-    setProducts(prev => {
-      const idx = prev.findIndex(p => p.id === record.id);
-      return idx >= 0 ? prev.map((p,i) => i===idx ? record : p) : [...prev, record];
-    });
+    setSyncStatus("syncing");
+    try {
+      const token = await getValidToken();
+      let sId = schoolId;
+      if (!sId) {
+        sId = await supa.upsertSchool(token, session.userId, {
+          school_name: settings.schoolName,
+          school_address: settings.schoolAddress,
+          assessor_name: settings.assessorName,
+          assessor_title: settings.assessorTitle,
+          manager_name: settings.managerName,
+          manager_title: settings.managerTitle,
+          reminder_days: settings.reminderDays,
+        });
+        setSchoolId(sId);
+      }
+      const savedId = await supa.upsertAssessment(token, session.userId, sId, record, getValidToken);
+      const finalRecord = {...record, id: savedId};
+      setProducts(prev => {
+        const idx = prev.findIndex(p => p.id === record.id);
+        return idx >= 0 ? prev.map((p,i) => i===idx ? finalRecord : p) : [...prev, finalRecord];
+      });
+      setSyncStatus("saved");
+      setTimeout(() => setSyncStatus(null), 3000);
+    } catch(e) {
+      console.error("Save error:", e);
+      setSyncStatus("error");
+      alert("Save failed: " + e.message + "\n\nYour assessment was NOT saved to the cloud. Please try again.");
+    }
     setEditingId(null);
     setTab("register");
   };
 
-  const saveAndPrint = () => {
+  const saveAndPrint = async () => {
     if (!form.productName) { alert("Please enter a product name."); return; }
     const record = {...form, id: editingId || Date.now().toString(), savedAt: new Date().toISOString()};
-    setProducts(prev => {
-      const idx = prev.findIndex(p => p.id === record.id);
-      return idx >= 0 ? prev.map((p,i) => i===idx ? record : p) : [...prev, record];
-    });
-    setPrintData(record);
+    setSyncStatus("syncing");
+    try {
+      const token = await getValidToken();
+      let sId = schoolId;
+      if (!sId) {
+        sId = await supa.upsertSchool(token, session.userId, {
+          school_name: settings.schoolName, school_address: settings.schoolAddress,
+          assessor_name: settings.assessorName, assessor_title: settings.assessorTitle,
+          manager_name: settings.managerName, manager_title: settings.managerTitle, reminder_days: settings.reminderDays,
+        });
+        setSchoolId(sId);
+      }
+      const savedId = await supa.upsertAssessment(token, session.userId, sId, record, getValidToken);
+      const finalRecord = {...record, id: savedId};
+      setProducts(prev => {
+        const idx = prev.findIndex(p => p.id === record.id);
+        return idx >= 0 ? prev.map((p,i) => i===idx ? finalRecord : p) : [...prev, finalRecord];
+      });
+      setPrintData(finalRecord);
+      setSyncStatus("saved");
+      setTimeout(() => setSyncStatus(null), 3000);
+    } catch(e) {
+      console.error("Save error:", e);
+      setPrintData(record);
+      setSyncStatus("error");
+    }
     setTab("print");
   };
 
   const editProduct = (id) => {
     const p = products.find(x => x.id === id);
     if (!p) return;
-    setForm({...BLANK, ...p});
+    setForm({...BLANK, ...p,
+      assessorName: p.assessorName || settings.assessorName,
+      assessorTitle: p.assessorTitle || settings.assessorTitle,
+      managerName: p.managerName || settings.managerName,
+    });
     setEditingId(id);
     setAiStatus(null);
+    setAiReviewed(false);
+    setAiUsed(false);
     setTab("form");
   };
 
   const newAssessment = () => {
     setForm({...BLANK, assessDate:today(), reviewDate:nextYear(),
       assessorName:settings.assessorName, assessorTitle:settings.assessorTitle,
-      managerName:settings.managerName});
+      managerName:settings.managerName, managerTitle:settings.managerTitle});
     setEditingId(null);
     setAiStatus(null);
+    setAiReviewed(false);
+    setAiUsed(false);
     setTab("form");
   };
 
-  // ── REGISTER ──
+  // -- REGISTER --
   const rd = parseInt(settings.reminderDays)||60;
   const filtered = products.filter(p =>
     (p.productName||"").toLowerCase().includes(search.toLowerCase()) ||
@@ -602,7 +1018,9 @@ ${JSON_RULES}`;
   const overdue = products.filter(p => statusInfo(p.reviewDate,rd).cls==="overdue");
   const due = products.filter(p => statusInfo(p.reviewDate,rd).cls==="due");
 
-  // ─────────────────────────────────────────────────────────────────────────────
+  // -- AUTH GATE handled in return below --
+
+  // -----------------------------------------------------------------------------
   return (
     <div style={S.app}>
       <style>{`
@@ -613,41 +1031,94 @@ ${JSON_RULES}`;
         @media print {
           .no-print { display:none !important; }
           .print-area { padding:6mm; }
-          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-          @page { size: A4 landscape; margin: 8mm; }
+          header { display:none !important; }
         }
         ::-webkit-scrollbar { width:6px; } ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:3px; }
       `}</style>
 
-      {/* HEADER */}
-      <header style={S.header}>
+      {/* NOT LOGGED IN */}
+      {!session && <LoginScreen onLogin={handleLogin} />}
+
+      {/* LOGGED IN */}
+      {session && (<div style={{display:"contents"}}>
+
+      {/* Loading spinner */}
+      {!subChecked && (
+        <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
+          <div style={{width:40,height:40,border:`3px solid ${GREEN}`,borderTopColor:"transparent",borderRadius:"50%",animation:"spin .7s linear infinite"}} />
+          <div style={{color:NAVY,fontWeight:600,fontFamily:"inherit"}}>Loading...</div>
+        </div>
+      )}
+
+      {/* Subscription expired screen */}
+      {subChecked && subPlan !== "owner" && subExpiry && new Date(subExpiry) < new Date() && (
+        <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{width:"100%",maxWidth:480,textAlign:"center"}}>
+            <div style={{width:60,height:60,background:"#fee2e2",borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,margin:"0 auto 16px"}}>(clock)</div>
+            <div style={{fontWeight:800,fontSize:22,color:NAVY,marginBottom:8}}>Your subscription has expired</div>
+            <div style={{fontSize:14,color:"#64748b",marginBottom:24,lineHeight:1.6}}>
+              Your COSHH Manager subscription expired on <strong>{new Date(subExpiry).toLocaleDateString("en-GB")}</strong>.<br/>
+              Your data is safe and waiting - please renew to regain access.
+            </div>
+            <div style={{background:"white",borderRadius:12,border:"1px solid #e2e8f0",padding:24,marginBottom:20,textAlign:"left"}}>
+              <div style={{fontWeight:700,color:NAVY,marginBottom:12}}>To renew your subscription:</div>
+              <div style={{fontSize:13,color:"#334155",lineHeight:2}}>
+                📧 Email: <strong>hello@coshhmanager.co.uk</strong><br/>
+                📞 Or contact your COSHH Manager administrator<br/>
+                💳 Annual renewal from <strong>GBP 149/year</strong>
+              </div>
+            </div>
+            <button onClick={handleLogout} style={{background:"none",border:"1px solid #cbd5e1",borderRadius:7,padding:"9px 20px",fontFamily:"inherit",fontSize:13,cursor:"pointer",color:"#64748b"}}>
+              Sign out
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Main app */}
+      <header style={S.header} className="no-print">
         <div style={{display:"flex", alignItems:"center", gap:10}}>
           <div style={{width:34,height:34,background:GREEN,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🛡</div>
           <div>
             <div style={{color:"white",fontWeight:700,fontSize:15}}>COSHH Manager</div>
-            <div style={{color:"rgba(255,255,255,.5)",fontSize:11}}>Hampshire County Council Template</div>
           </div>
         </div>
-        <div style={{background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.8)",padding:"4px 14px",borderRadius:20,fontSize:12}}>
-          {settings.schoolName || "My School"}
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          {syncStatus==="syncing" && <div style={{background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.8)",padding:"4px 12px",borderRadius:20,fontSize:12,display:"flex",alignItems:"center",gap:6}}><Spinner />Saving...</div>}
+          {syncStatus==="saved" && <div style={{background:"rgba(0,176,80,.2)",color:"#86efac",padding:"4px 12px",borderRadius:20,fontSize:12}}>v Saved to cloud</div>}
+          {syncStatus==="error" && <div style={{background:"rgba(220,38,38,.2)",color:"#fca5a5",padding:"4px 12px",borderRadius:20,fontSize:12}}>(!) Save failed</div>}
+          <div style={{background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.8)",padding:"4px 14px",borderRadius:20,fontSize:12}}>
+            {settings.schoolName || session.email}
+          </div>
+          <button onClick={handleLogout} style={{background:"rgba(255,255,255,.1)",color:"rgba(255,255,255,.7)",border:"1px solid rgba(255,255,255,.2)",borderRadius:20,padding:"4px 12px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+            Sign Out
+          </button>
         </div>
       </header>
 
       {/* TABS */}
       <div style={S.tabs} className="no-print">
-        {[["register","📋 Register"],["form","➕ Assessment"],["print","🖨 Print"],["settings","⚙ Settings"]].map(([id,label]) =>
+        {[["register","📋 Register"],["form","+ Assessment"],["print","🖨 Print"],["settings","Settings"]].map(([id,label]) =>
           <button key={id} style={S.tab(tab===id)} onClick={() => setTab(id)}>{label}</button>
         )}
       </div>
 
       <div style={S.main}>
+        {dataLoading && (
+          <div style={{textAlign:"center",padding:"60px 20px",color:"#64748b"}}>
+            <div style={{fontSize:32,marginBottom:12}}>Cloud</div>
+            <div style={{fontWeight:600,marginBottom:6}}>Loading your assessments...</div>
+            <div style={{fontSize:13}}>Fetching data from cloud storage</div>
+          </div>
+        )}
+        {!dataLoading && (<div>
 
-        {/* ── REGISTER ── */}
+        {/* -- REGISTER -- */}
         {tab === "register" && (
           <div>
             {(overdue.length > 0 || due.length > 0) && (
               <div style={{background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:8,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:12}}>
-                <span style={{fontSize:20}}>⏰</span>
+                <span style={{fontSize:20}}>(clock)</span>
                 <span style={{fontSize:13,color:"#92400e",flex:1}}>
                   {overdue.length > 0 && <strong>{overdue.length} assessment{overdue.length>1?"s":""} overdue! </strong>}
                   {due.length > 0 && `${due.length} assessment${due.length>1?"s":""} due for review within ${rd} days.`}
@@ -663,7 +1134,7 @@ ${JSON_RULES}`;
               <div style={{display:"flex",gap:10}}>
                 <button style={S.btn("ghost")} onClick={()=>exportToCSV(products)}
                   disabled={products.length===0} title="Export register to CSV">
-                  ⬇ Export CSV
+                  v Export CSV
                 </button>
                 <button style={S.btn("green")} onClick={newAssessment}>+ New Assessment</button>
               </div>
@@ -700,7 +1171,7 @@ ${JSON_RULES}`;
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
                   <thead>
                     <tr style={{background:"#f8fafc"}}>
-                      {["Product","Manufacturer","Location","Stock","Assessed","Review Due","Status",""].map(h =>
+                      {["Product","Manufacturer","Location","Stock","Assessed","Review Due","Status","Source",""].map(h =>
                         <th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:600,
                           textTransform:"uppercase",letterSpacing:".04em",color:"#64748b",
                           borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap"}}>{h}</th>
@@ -716,14 +1187,21 @@ ${JSON_RULES}`;
                             <div style={{fontWeight:600,fontSize:13}}>{p.productName}</div>
                             <div style={{fontSize:11,color:"#64748b"}}>{p.task}</div>
                           </td>
-                          <td style={{padding:"12px 14px",fontSize:13}}>{p.manufacturer||"—"}</td>
-                          <td style={{padding:"12px 14px",fontSize:13}}>{p.location||"—"}</td>
-                          <td style={{padding:"12px 14px",fontSize:13,color:p.amountStored?"#334155":"#94a3b8"}}>{p.amountStored||"—"}</td>
+                          <td style={{padding:"12px 14px",fontSize:13}}>{p.manufacturer||"-"}</td>
+                          <td style={{padding:"12px 14px",fontSize:13}}>{p.location||"-"}</td>
+                          <td style={{padding:"12px 14px",fontSize:13,color:p.amountStored?"#334155":"#94a3b8"}}>{p.amountStored||"-"}</td>
                           <td style={{padding:"12px 14px",fontSize:13}}>{fmtDate(p.assessDate)}</td>
                           <td style={{padding:"12px 14px",fontSize:13}}>{fmtDate(p.reviewDate)}</td>
                           <td style={{padding:"12px 14px"}}><span style={S.badge(st.cls)}>{st.label}</span></td>
+                          <td style={{padding:"12px 14px"}}>
+                            {(() => {
+                              const src = p.sdsSource || "Manual";
+                              const color = src.startsWith("AI - County") ? ["#e6f7ee","#007a38"] : src.startsWith("AI -") ? ["#e0f2fe","#0369a1"] : src === "PDF Upload" ? ["#f3e8ff","#7e22ce"] : ["#f1f5f9","#64748b"];
+                              return <span style={{background:color[0],color:color[1],padding:"3px 8px",borderRadius:20,fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>{src}</span>;
+                            })()}
+                          </td>
                           <td style={{padding:"12px 14px",whiteSpace:"nowrap"}}>
-                            <button onClick={()=>editProduct(p.id)} style={{...S.btn("ghost"),marginRight:4,fontSize:12,padding:"5px 10px"}}>✏ Edit</button>
+                            <button onClick={()=>editProduct(p.id)} style={{...S.btn("ghost"),marginRight:4,fontSize:12,padding:"5px 10px"}}>Edit</button>
                             <button onClick={()=>{setPrintData(p);setTab("print");}} style={{...S.btn("ghost"),marginRight:4,fontSize:12,padding:"5px 10px"}}>🖨</button>
                             {(p.sdsData||p.sdsUrl) && (
                               <button onClick={()=>viewSDS(p)} style={{...S.btn("ghost"),marginRight:4,fontSize:12,padding:"5px 10px",color:GREEN}} title="View original SDS">📄 SDS</button>
@@ -740,7 +1218,7 @@ ${JSON_RULES}`;
           </div>
         )}
 
-        {/* ── FORM ── */}
+        {/* -- FORM -- */}
         {tab === "form" && (
           <div style={{display:"grid",gridTemplateColumns:"1fr 340px",gap:20,alignItems:"start"}}>
             {/* Main form */}
@@ -756,7 +1234,7 @@ ${JSON_RULES}`;
                   This risk assessment is to be used to identify the risks and control measures required for hazardous substances but not Zoonosis or Biological agents.
                 </p>
 
-                <div style={S.secTitle}>Section 1 — Product & Company Details</div>
+                <div style={S.secTitle}>Section 1 - Product & Company Details</div>
                 <div style={S.grid2}>
                   <Field label="Name of Hazardous Substance *"><Input value={form.productName} onChange={upd("productName")} placeholder="e.g. Mr Muscle Window & Glass" /></Field>
                   <Field label="Description of Process"><Input value={form.processDesc} onChange={upd("processDesc")} placeholder="e.g. Window cleaning" /></Field>
@@ -768,9 +1246,9 @@ ${JSON_RULES}`;
                   <Field label="SDS Reference & Date"><Input value={form.sdsRef} onChange={upd("sdsRef")} placeholder="e.g. Version 1.0, Jan 2024" /></Field>
                   <Field label="SDS Attached?">
                     <Select value={form.sdsAttached} onChange={upd("sdsAttached")}
-                      options={[{v:"Yes",l:"Yes — attached"},{v:"No",l:"No — not yet obtained"},{v:"Online",l:"Online — link available"}]} />
+                      options={[{v:"Yes",l:"Yes - attached"},{v:"No",l:"No - not yet obtained"},{v:"Online",l:"Online - link available"}]} />
                   </Field>
-                  <Field label="SDS URL (optional — paste link to online SDS)" span2>
+                  <Field label="SDS URL (optional - paste link to online SDS)" span2>
                     <div style={{display:"flex",gap:8}}>
                       <Input value={form.sdsUrl} onChange={upd("sdsUrl")} placeholder="https://..." />
                       {form.sdsUrl && (
@@ -783,13 +1261,13 @@ ${JSON_RULES}`;
                   </Field>
                 </div>
 
-                <div style={S.secTitle}>Section 2 — Location & Activity</div>
+                <div style={S.secTitle}>Section 2 - Location & Activity</div>
                 <div style={S.grid2}>
                   <Field label="Location of Activity"><Input value={form.location} onChange={upd("location")} placeholder="e.g. Classrooms, Corridors" /></Field>
                   <Field label="Task or Process"><Input value={form.task} onChange={upd("task")} placeholder="e.g. Surface cleaning" /></Field>
                 </div>
 
-                <div style={S.secTitle}>Section 3 — Hazard Classification</div>
+                <div style={S.secTitle}>Section 3 - Hazard Classification</div>
                 <p style={{fontSize:12,color:"#64748b",marginBottom:10}}>Click to tick applicable GHS hazard pictograms:</p>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
                   {HAZARDS.map(h => (
@@ -805,12 +1283,12 @@ ${JSON_RULES}`;
                 </div>
                 <Field label="Please identify the Hazard (H) Phrase">
                   <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                    <Input value={form.hPhrasesNone?"None required":form.hPhrases} onChange={upd("hPhrases")} disabled={form.hPhrasesNone} placeholder="e.g. H315 – Causes skin irritation." />
+                    <Input value={form.hPhrasesNone?"None required":form.hPhrases} onChange={upd("hPhrases")} disabled={form.hPhrasesNone} placeholder="e.g. H315 - Causes skin irritation." />
                     <CB label="None" checked={form.hPhrasesNone} onChange={v=>setForm(f=>({...f,hPhrasesNone:v,hPhrases:v?"None required":""}))} />
                   </div>
                 </Field>
 
-                <div style={S.secTitle}>Section 4 — About the Substance</div>
+                <div style={S.secTitle}>Section 4 - About the Substance</div>
                 <p style={{fontSize:12,color:"#92400e",fontStyle:"italic",background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:6,padding:"6px 10px",marginBottom:12}}>
                   Please note that the use of pesticides/herbicides, must be recorded on the Pesticide Record sheet.
                 </p>
@@ -823,7 +1301,7 @@ ${JSON_RULES}`;
                   <Field label="Dilution / Mix Ratio"><Input value={form.dilution} onChange={upd("dilution")} placeholder="e.g. RTU / 1:10" /></Field>
                 </div>
                 <div style={{...S.grid2,marginTop:14}}>
-                  <Field label="Likely Route(s) of Entry — tick all that apply">
+                  <Field label="Likely Route(s) of Entry - tick all that apply">
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,padding:"8px 0"}}>
                       {["Inhalation","Skin contact","Eye contact","Ingestion","Skin absorption","Injection"].map(r =>
                         <CB key={r} label={r} checked={form.routeOfEntry.includes(r)} onChange={()=>toggleRoute(r)} />
@@ -838,12 +1316,12 @@ ${JSON_RULES}`;
                       <Select value={form.welExceeded} onChange={upd("welExceeded")} options={["No","Yes","N/A"]} />
                     </Field>
                     <Field label="If the answer is 'Yes' to above question, have you contacted H&S advisor and recorded recommended actions?">
-                      <Select value={form.welHSContacted} onChange={upd("welHSContacted")} options={["N/A","Yes","No — action required"]} />
+                      <Select value={form.welHSContacted} onChange={upd("welHSContacted")} options={["N/A","Yes","No - action required"]} />
                     </Field>
                   </div>
                 </div>
                 <div style={{...S.grid3,marginTop:14}}>
-                  <Field label="Amount of substance supplied/stored on site"><Input value={form.amountStored} onChange={upd("amountStored")} placeholder="e.g. 2 × 750ml" /></Field>
+                  <Field label="Amount of substance supplied/stored on site"><Input value={form.amountStored} onChange={upd("amountStored")} placeholder="e.g. 2 x 750ml" /></Field>
                   <Field label="Total amount used or generated per operation"><Input value={form.amountUsed} onChange={upd("amountUsed")} placeholder="e.g. 750ml" /></Field>
                   <Field label="Method of application/generation"><Input value={form.method} onChange={upd("method")} placeholder="e.g. Spray and wipe" /></Field>
                   <Field label="Duration of exposure per application/operation"><Input value={form.duration} onChange={upd("duration")} placeholder="e.g. <30 mins" /></Field>
@@ -854,6 +1332,9 @@ ${JSON_RULES}`;
                   <Field label="Substance used as a stand-alone product?">
                     <Select value={form.standalone} onChange={upd("standalone")}
                       options={["Yes","No"]} />
+                  </Field>
+                  <Field label="Where is the product stored?">
+                    <Input value={form.productStorage} onChange={upd("productStorage")} placeholder="e.g. Locked cleaning cupboard, Room 14" />
                   </Field>
                   <Field label="Used with a combination of substances?">
                     <Select value={form.accumulated} onChange={upd("accumulated")}
@@ -870,20 +1351,20 @@ ${JSON_RULES}`;
                           checked={form.separateAssessConfirm===true}
                           onChange={()=>setForm(f=>({...f,separateAssessConfirm:true}))}
                           style={{width:16,height:16,accentColor:GREEN,cursor:"pointer"}} />
-                        <label htmlFor="separateAssessYes" style={{fontSize:13,cursor:"pointer"}}>Yes — separate assessment in place</label>
+                        <label htmlFor="separateAssessYes" style={{fontSize:13,cursor:"pointer"}}>Yes - separate assessment in place</label>
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:10}}>
                         <input type="radio" id="separateAssessNo" name="separateAssessConfirm"
                           checked={form.separateAssessConfirm===false}
                           onChange={()=>setForm(f=>({...f,separateAssessConfirm:false}))}
                           style={{width:16,height:16,accentColor:"#dc2626",cursor:"pointer"}} />
-                        <label htmlFor="separateAssessNo" style={{fontSize:13,cursor:"pointer",color:"#dc2626"}}>No — a separate assessment to be completed</label>
+                        <label htmlFor="separateAssessNo" style={{fontSize:13,cursor:"pointer",color:"#dc2626"}}>No - a separate assessment to be completed</label>
                       </div>
                     </div>
                   </Field>
                 </div>
 
-                <div style={S.secTitle}>Section 5 — Controls Required</div>
+                <div style={S.secTitle}>Section 5 - Controls Required</div>
                 <p style={{fontSize:12,color:"#334155",fontWeight:600,marginBottom:6}}>What controls are required for all activities identified in this assessment, and what has been implemented on the specific site?</p>
                 <p style={{fontSize:12,color:"#64748b",fontStyle:"italic",marginBottom:12}}>NB: Controls are identified within Safety Data Sheets, and guidance found in the Corporate PPE procedure for PPE and RPE.</p>
 
@@ -988,7 +1469,7 @@ ${JSON_RULES}`;
                   </table>
                 </div>
 
-                {/* Additional Controls — Health Surveillance */}
+                {/* Additional Controls - Health Surveillance */}
                 <div style={{marginTop:16}}>
                   <div style={{fontWeight:700,fontSize:13,color:NAVY,marginBottom:8}}>Additional Controls</div>
                   <div style={{display:"flex",flexWrap:"wrap",gap:"8px 24px"}}>
@@ -1008,7 +1489,7 @@ ${JSON_RULES}`;
                   </div>
                 </div>
 
-                <div style={S.secTitle}>Section 6 — Safe Working Instructions for Operative</div>
+                <div style={S.secTitle}>Section 6 - Safe Working Instructions for Operative</div>
                 <div style={{border:"1px solid #94a3b8",borderRadius:6,overflow:"hidden",marginBottom:14}}>
                   <div style={{background:GREEN,color:"white",fontWeight:700,fontSize:13,textAlign:"center",padding:"8px 12px"}}>
                     Safe Working Instructions for Operative
@@ -1024,7 +1505,7 @@ ${JSON_RULES}`;
                     ["What control measures are required: list specified PPE, mechanical controls such as LEV, barriers etc.", "controlMeasures", "e.g. Wear nitrile gloves, ensure adequate ventilation."],
                     ["Clean up and Disposal Arrangements:", "disposal", "e.g. Dispose in accordance with local regulations."],
                     ["First Aid Requirements:", "firstAid", "e.g. Eyes: rinse with water for 15 mins. Skin: wash with soap and water."],
-                    ["Fire Precautions:", "fire", "e.g. Not flammable. Use CO₂ or dry chemical extinguisher."],
+                    ["Fire Precautions:", "fire", "e.g. Not flammable. Use CO2 or dry chemical extinguisher."],
                     ["Any further considerations:", "notes", ""],
                   ].map(([label, key, placeholder]) => (
                     <div key={key} style={{borderBottom:"1px solid #94a3b8"}}>
@@ -1037,7 +1518,7 @@ ${JSON_RULES}`;
                 </div>
                 <div style={{height:14}} />
 
-                <div style={S.secTitle}>Section 7 — Sign-Off</div>
+                <div style={S.secTitle}>Section 7 - Sign-Off</div>
                 <div style={S.grid2}>
                   <Field label="Assessor Name"><Input value={form.assessorName} onChange={upd("assessorName")} /></Field>
                   <Field label="Assessor Job Title"><Input value={form.assessorTitle} onChange={upd("assessorTitle")} placeholder="e.g. Site Manager / Caretaker" /></Field>
@@ -1048,10 +1529,32 @@ ${JSON_RULES}`;
                   <strong>Important:</strong> Original risk assessments must be kept for <strong>40 years</strong>. On completion, print and place in your local health and safety folder.
                 </div>
               </div>
-              <div style={{...S.cardHead,borderTop:"1px solid #e2e8f0",borderBottom:"none",justifyContent:"flex-end",gap:10,background:"#f8fafc"}}>
-                <button style={S.btn("ghost")} onClick={()=>{setForm({...BLANK,assessDate:today(),reviewDate:nextYear()});setAiStatus(null);}}>Clear</button>
-                <button style={S.btn("ghost")} onClick={saveAndPrint}>🖨 Save & Print Preview</button>
-                <button style={S.btn("green")} onClick={saveProduct}>💾 Save Assessment</button>
+              <div style={{...S.cardHead,borderTop:"1px solid #e2e8f0",borderBottom:"none",flexDirection:"column",gap:10,background:"#f8fafc",alignItems:"stretch"}}>
+                {aiUsed && (
+                  <div style={{marginBottom:4}}>
+                    <div style={{background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:6,padding:"10px 14px",marginBottom:10}}>
+                      <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                        <span style={{fontSize:16,marginTop:1}}>⚠</span>
+                        <div>
+                          <div style={{fontSize:13,fontWeight:600,color:"#92400e",marginBottom:3}}>AI-generated content — review required</div>
+                          <div style={{fontSize:12,color:"#92400e",lineHeight:1.6}}>Product safety data may have changed since this was retrieved. Always verify all fields against the current Safety Data Sheet (SDS) before saving. The responsible person remains accountable for the accuracy of this assessment.</div>
+                        </div>
+                      </div>
+                    </div>
+                    <label style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 14px",background:"white",border:"1px solid #cbd5e1",borderRadius:6,cursor:"pointer",fontSize:13,color:"#334155",lineHeight:1.5}}>
+                      <input type="checkbox" checked={aiReviewed} onChange={e=>{setAiReviewed(e.target.checked);}}
+                        style={{marginTop:2,width:15,height:15,accentColor:GREEN,cursor:"pointer",flexShrink:0}} />
+                      I confirm I have reviewed all AI-generated content in this assessment and verified it against the current Safety Data Sheet (SDS).
+                    </label>
+                  </div>
+                )}
+                <div style={{display:"flex",justifyContent:"flex-end",gap:10}}>
+                  <button style={S.btn("ghost")} onClick={()=>{setForm({...BLANK,assessDate:today(),reviewDate:nextYear()});setAiStatus(null);setAiUsed(false);setAiReviewed(false);}}>Clear</button>
+                  <button style={{...S.btn("ghost"),opacity:(aiUsed&&!aiReviewed)?0.4:1,cursor:(aiUsed&&!aiReviewed)?"not-allowed":"pointer"}}
+                    onClick={()=>{if(aiUsed&&!aiReviewed){alert("Please confirm you have reviewed the AI-generated content before saving.");return;}saveAndPrint();}}>🖨 Save & Print Preview</button>
+                  <button style={{...S.btn("green"),opacity:(aiUsed&&!aiReviewed)?0.4:1,cursor:(aiUsed&&!aiReviewed)?"not-allowed":"pointer"}}
+                    onClick={()=>{if(aiUsed&&!aiReviewed){alert("Please confirm you have reviewed the AI-generated content before saving.");return;}saveProduct();}}>💾 Save Assessment</button>
+                </div>
               </div>
             </div>
 
@@ -1064,11 +1567,6 @@ ${JSON_RULES}`;
                   <div style={{color:"rgba(255,255,255,.6)",fontSize:12,marginTop:2}}>Checks Hampshire County Supplies first, then manufacturer SDS</div>
                 </div>
                 <div style={{padding:16}}>
-                  {!settings.apiKey && (
-                    <div style={{background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:6,padding:"8px 12px",marginBottom:10,fontSize:12,color:"#92400e"}}>
-                      ⚠ Add your Anthropic API key in <strong>Settings</strong> to enable AI search.
-                    </div>
-                  )}
                   <div style={{display:"flex",gap:8,marginBottom:8}}>
                     <input value={aiQuery} onChange={e=>setAiQuery(e.target.value)}
                       onKeyDown={e=>e.key==="Enter"&&runAiSearch()}
@@ -1095,7 +1593,7 @@ ${JSON_RULES}`;
               <div style={S.card}>
                 <div style={{background:NAVY,padding:"12px 16px",borderRadius:"10px 10px 0 0"}}>
                   <div style={{color:"white",fontWeight:700,fontSize:14}}>📄 Attach SDS Document</div>
-                  <div style={{color:"rgba(255,255,255,.6)",fontSize:12,marginTop:2}}>Upload PDF or image — saved with assessment</div>
+                  <div style={{color:"rgba(255,255,255,.6)",fontSize:12,marginTop:2}}>Upload PDF or image - saved with assessment</div>
                 </div>
                 <div style={{padding:16}}>
                   <div onClick={()=>document.getElementById("sdsUpload").click()}
@@ -1103,9 +1601,9 @@ ${JSON_RULES}`;
                       cursor:"pointer",background:"#f8fafc",transition:"all .15s"}}
                     onMouseEnter={e=>{e.currentTarget.style.borderColor=GREEN;e.currentTarget.style.background="#e6f7ee"}}
                     onMouseLeave={e=>{e.currentTarget.style.borderColor="#cbd5e1";e.currentTarget.style.background="#f8fafc"}}>
-                    <div style={{fontSize:28,marginBottom:6}}>{sdsLoading ? "⏳" : "📎"}</div>
+                    <div style={{fontSize:28,marginBottom:6}}>{sdsLoading ? "(...)" : "📎"}</div>
                     <div style={{fontSize:12,color:"#64748b"}}>
-                      {sdsLoading ? "Extracting SDS data..." : <><strong style={{color:GREEN}}>Click to upload</strong> or drag & drop<br/>PDF, PNG or JPG · auto-fills the form</>}
+                      {sdsLoading ? "Extracting SDS data..." : <><strong style={{color:GREEN}}>Click to upload</strong> or drag & drop<br/>PDF, PNG or JPG . auto-fills the form</>}
                     </div>
                   </div>
                   <input id="sdsUpload" type="file" accept=".pdf,.png,.jpg,.jpeg" style={{display:"none"}}
@@ -1116,11 +1614,11 @@ ${JSON_RULES}`;
                       <span style={{fontSize:20}}>📄</span>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:12,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{form.sdsFilename||"SDS Document"}</div>
-                        <div style={{fontSize:11,color:"#64748b"}}>Attached · saved with assessment</div>
+                        <div style={{fontSize:11,color:"#64748b"}}>Attached . saved with assessment</div>
                       </div>
                       <button onClick={()=>viewSDS(form)} style={{...S.btn("ghost"),fontSize:11,padding:"4px 10px"}}>👁 View</button>
                       <button onClick={()=>setForm(f=>({...f,sdsData:null,sdsFilename:""}))}
-                        style={{...S.btn("ghost"),fontSize:11,padding:"4px 8px",color:"#dc2626"}}>✕</button>
+                        style={{...S.btn("ghost"),fontSize:11,padding:"4px 8px",color:"#dc2626"}}>x</button>
                     </div>
                   )}
                 </div>
@@ -1129,9 +1627,9 @@ ${JSON_RULES}`;
               {/* Tips */}
               <div style={S.card}>
                 <div style={{padding:"12px 16px",background:"#f8fafc",borderRadius:10}}>
-                  <div style={{fontWeight:600,fontSize:12,marginBottom:8}}>ℹ Guidance</div>
+                  <div style={{fontWeight:600,fontSize:12,marginBottom:8}}>(i) Guidance</div>
                   {["Always verify AI-populated fields before saving.","Review dates auto-set to 12 months from assessment.","Original risk assessments must be kept for 40 years.","Pesticide/herbicide use must be recorded separately."].map(t =>
-                    <div key={t} style={{fontSize:12,color:"#64748b",marginBottom:4}}>• {t}</div>
+                    <div key={t} style={{fontSize:12,color:"#64748b",marginBottom:4}}>* {t}</div>
                   )}
                 </div>
               </div>
@@ -1139,24 +1637,27 @@ ${JSON_RULES}`;
           </div>
         )}
 
-        {/* ── PRINT ── */}
+        {/* -- PRINT -- */}
         {tab === "print" && (
           <div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}} className="no-print">
-              <h2 style={{fontSize:18,fontWeight:700,color:NAVY}}>Print Preview — A4 Landscape</h2>
-              <div style={{display:"flex",gap:10}}>
-                <button style={S.btn("ghost")} onClick={()=>setTab("form")}>← Edit</button>
-                <button style={S.btn("green")} onClick={()=>{
-                  const name = printData?.productName || "COSHH-Assessment";
-                  const safe = name.replace(/[^a-zA-Z0-9]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
-                  const prev = document.title;
-                  document.title = safe;
-                  window.print();
-                  document.title = prev;
-                }}>🖨 Print / Save PDF</button>
+              <h2 style={{fontSize:18,fontWeight:700,color:NAVY}}>Print Preview - A4 {printOrientation==="portrait"?"Portrait":"Landscape"}</h2>
+              <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                <div style={{display:"flex",background:"#f1f5f9",borderRadius:6,padding:2,gap:2}}>
+                  <button onClick={()=>setPrintOrientation("landscape")}
+                    style={{padding:"5px 12px",border:"none",borderRadius:5,fontFamily:"inherit",fontSize:12,cursor:"pointer",
+                      background:printOrientation==="landscape"?NAVY:"transparent",
+                      color:printOrientation==="landscape"?"white":"#64748b",fontWeight:600}}>Landscape</button>
+                  <button onClick={()=>setPrintOrientation("portrait")}
+                    style={{padding:"5px 12px",border:"none",borderRadius:5,fontFamily:"inherit",fontSize:12,cursor:"pointer",
+                      background:printOrientation==="portrait"?NAVY:"transparent",
+                      color:printOrientation==="portrait"?"white":"#64748b",fontWeight:600}}>Portrait</button>
+                </div>
+                <button style={S.btn("ghost")} onClick={()=>setTab("form")}> Back</button>
+                <button style={S.btn("green")} onClick={()=>window.print()}>🖨 Print / Save PDF</button>
               </div>
             </div>
-            {printData ? <PrintPreview p={printData} school={settings.schoolName} addr={settings.schoolAddress} /> : (
+            {printData ? <PrintPreview p={printData} school={settings.schoolName} addr={settings.schoolAddress} orientation={printOrientation} /> : (
               <div style={{textAlign:"center",padding:60,color:"#64748b"}}>
                 No assessment loaded. Click "Save & Print Preview" from the form.
               </div>
@@ -1164,11 +1665,38 @@ ${JSON_RULES}`;
           </div>
         )}
 
-        {/* ── SETTINGS ── */}
+        </div>)}
+
+        {/* -- SETTINGS -- */}
         {tab === "settings" && (
           <div style={{...S.card,maxWidth:540}}>
-            <div style={S.cardHead}><span style={{fontWeight:700,color:NAVY}}>⚙ Settings</span></div>
+            <div style={S.cardHead}><span style={{fontWeight:700,color:NAVY}}>Settings</span></div>
             <div style={S.cardBody}>
+
+              {/* Subscription status */}
+              <div style={S.secTitle}>Subscription</div>
+              {(() => {
+                const isOwner = subPlan === "owner";
+                const isExpired = subExpiry && new Date(subExpiry) < new Date();
+                const isActive = subExpiry && new Date(subExpiry) >= new Date();
+                const bgColor = isOwner ? "#e6f7ee" : isExpired ? "#fee2e2" : isActive ? "#e6f7ee" : "#f1f5f9";
+                const borderColor = isOwner ? "#b3e6cc" : isExpired ? "#fca5a5" : isActive ? "#b3e6cc" : "#e2e8f0";
+                const planLabel = isOwner ? "🛡 Owner Account" : subPlan === "trial" ? "🔄 Trial" : ("📋 " + (subPlan||"").charAt(0).toUpperCase() + (subPlan||"").slice(1) + " Plan");
+                const expiryLabel = isOwner ? "Full access - no expiry" : subExpiry ? ("Expires: " + new Date(subExpiry).toLocaleDateString("en-GB")) : "No expiry date set - contact your administrator";
+                return (
+                  <div style={{background:bgColor,border:"1px solid "+borderColor,borderRadius:8,padding:"12px 16px",marginBottom:14,fontSize:13}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div>
+                        <div style={{fontWeight:700,color:NAVY,marginBottom:2}}>{planLabel}</div>
+                        <div style={{color:"#64748b"}}>{expiryLabel}</div>
+                      </div>
+                      {isExpired && !isOwner && <span style={{background:"#dc2626",color:"white",padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>Expired</span>}
+                      {isActive && !isOwner && <span style={{background:GREEN,color:"white",padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:600}}>Active</span>}
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div style={S.secTitle}>School Details</div>
               <div style={{...S.grid2,marginBottom:14}}>
                 <Field label="School Name"><Input value={settings.schoolName} onChange={v=>setSettings(s=>({...s,schoolName:v}))} /></Field>
@@ -1176,25 +1704,12 @@ ${JSON_RULES}`;
                 <Field label="Default Assessor Name"><Input value={settings.assessorName} onChange={v=>setSettings(s=>({...s,assessorName:v}))} /></Field>
                 <Field label="Default Assessor Title"><Input value={settings.assessorTitle} onChange={v=>setSettings(s=>({...s,assessorTitle:v}))} placeholder="e.g. Site Manager" /></Field>
                 <Field label="Default Manager Name"><Input value={settings.managerName} onChange={v=>setSettings(s=>({...s,managerName:v}))} /></Field>
+                <Field label="Default Manager Title"><Input value={settings.managerTitle||""} onChange={v=>setSettings(s=>({...s,managerTitle:v}))} placeholder="e.g. Headteacher" /></Field>
               </div>
 
-              <div style={S.secTitle}>AI Search — Anthropic API Key</div>
-              <div style={{fontSize:13,color:"#64748b",marginBottom:12,lineHeight:1.6}}>
-                Required for AI auto-fill and SDS search. Get a free key at <a href="https://console.anthropic.com" target="_blank" style={{color:"#00b050"}}>console.anthropic.com</a> → API Keys. Your key is stored locally in your browser only — never shared.
-              </div>
-              <div style={{...S.grid2,marginBottom:14}}>
-                <Field label="Anthropic API Key" span2>
-                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                    <input
-                      type="password"
-                      value={settings.apiKey||""}
-                      onChange={e=>setSettings(s=>({...s,apiKey:e.target.value}))}
-                      placeholder="sk-ant-..."
-                      style={{...S.input,flex:1,fontFamily:"monospace",fontSize:13}}
-                    />
-                    {settings.apiKey && <span style={{fontSize:12,color:"#00b050",whiteSpace:"nowrap"}}>✓ Key saved</span>}
-                  </div>
-                </Field>
+              <div style={S.secTitle}>AI Search</div>
+              <div style={{background:"#e6f7ee",border:"1px solid #b3e6cc",borderRadius:8,padding:"12px 16px",marginBottom:14,fontSize:13,color:"#1a5c32"}}>
+                v AI-powered SDS search is included with your subscription. No API key required.
               </div>
 
               <div style={{...S.grid2,marginBottom:14}}>
@@ -1224,7 +1739,7 @@ ${JSON_RULES}`;
                   return diff >= 0 && diff <= rd;
                 });
                 const total = overdue.length + due.length;
-                const subject = encodeURIComponent(`COSHH Review Reminder — ${settings.schoolName||"School"} — ${new Date().toLocaleDateString("en-GB")}`);
+                const subject = encodeURIComponent(`COSHH Review Reminder - ${settings.schoolName||"School"} - ${new Date().toLocaleDateString("en-GB")}`);
                 const bodyEnc = encodeURIComponent(body||"No assessments currently due.");
                 const mailtoHref = `mailto:${settings.email||""}?subject=${subject}&body=${bodyEnc}`;
                 return (
@@ -1233,19 +1748,19 @@ ${JSON_RULES}`;
                       style={{...S.btn("green"),textDecoration:"none",display:"inline-flex",alignItems:"center",gap:6,
                         opacity:settings.email?1:0.5,pointerEvents:settings.email?"auto":"none"}}
                       onClick={()=>setEmailStatus(total>0?"sent":"nothing-due")}>
-                      ✉ Send Reminder Email
+                      Email Send Reminder Email
                     </a>
                     {!settings.email && <span style={{fontSize:12,color:"#dc2626"}}>Enter an email address above first</span>}
-                    {settings.email && total===0 && <span style={{fontSize:12,color:GREEN}}>✓ No assessments currently overdue or due soon</span>}
+                    {settings.email && total===0 && <span style={{fontSize:12,color:GREEN}}>v No assessments currently overdue or due soon</span>}
                     {settings.email && total>0 && <span style={{fontSize:12,color:"#d97706"}}>
-                      ⚠ {overdue.length>0&&`${overdue.length} overdue`}{overdue.length>0&&due.length>0&&", "}{due.length>0&&`${due.length} due soon`}
+                      (!) {overdue.length>0&&`${overdue.length} overdue`}{overdue.length>0&&due.length>0&&", "}{due.length>0&&`${due.length} due soon`}
                     </span>}
                   </div>
                 );
               })()}
               {emailStatus==="sent" && (
                 <div style={{...S.aiBox,fontSize:12,marginBottom:12}}>
-                  ✓ Your email app has opened with the reminder. Check your drafts if it did not send automatically.
+                  v Your email app has opened with the reminder. Check your drafts if it did not send automatically.
                 </div>
               )}
               <div style={{fontSize:12,color:"#94a3b8",marginBottom:4}}>
@@ -1259,43 +1774,64 @@ ${JSON_RULES}`;
               <div style={{display:"flex",alignItems:"center",gap:12}}>
                 <button style={S.btn("green")} onClick={()=>exportToCSV(products)}
                   disabled={products.length===0}>
-                  ⬇ Export Register to CSV
+                  v Export Register to CSV
                 </button>
                 {products.length===0
                   ? <span style={{fontSize:12,color:"#94a3b8"}}>No products in register yet</span>
                   : <span style={{fontSize:12,color:"#64748b"}}>{products.length} product{products.length!==1?"s":""} will be exported</span>}
               </div>
             </div>
-            <div style={{...S.cardHead,borderTop:"1px solid #e2e8f0",borderBottom:"none",justifyContent:"flex-end",background:"#f8fafc"}}>
-              <span style={{fontSize:12,color:GREEN}}>✓ Settings save automatically</span>
+            <div style={{...S.cardHead,borderTop:"1px solid #e2e8f0",borderBottom:"none",justifyContent:"space-between",background:"#f8fafc"}}>
+              <button style={S.btn("green")} onClick={async ()=>{
+                setSyncStatus("syncing");
+                try {
+                  const tok = await getValidToken();
+                  const sId = await supa.upsertSchool(tok, session.userId, {
+                    school_name: settings.schoolName,
+                    school_address: settings.schoolAddress,
+                    assessor_name: settings.assessorName,
+                    assessor_title: settings.assessorTitle,
+                    manager_name: settings.managerName,
+                    manager_title: settings.managerTitle,
+                    reminder_days: settings.reminderDays,
+                  });
+                  setSchoolId(sId);
+                  setSyncStatus("saved");
+                  setTimeout(() => setSyncStatus(null), 3000);
+                } catch(e) { setSyncStatus("error"); }
+              }}>💾 Save Settings</button>
+              <span style={{fontSize:12,color:"#64748b"}}>API key is stored locally in your browser only</span>
+            </div>
+          </div>
+        )}
+        {/* DELETE MODAL */}
+        {deleteTarget && (
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+            <div style={{...S.card,maxWidth:400,width:"100%",padding:24}}>
+              <div style={{fontWeight:700,fontSize:16,color:NAVY,marginBottom:10}}>Delete Assessment?</div>
+              <div style={{fontSize:14,color:"#334155",marginBottom:20}}>This will permanently remove <strong>{deleteTarget.productName}</strong>. This cannot be undone.</div>
+              <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                <button style={S.btn("ghost")} onClick={()=>setDeleteTarget(null)}>Cancel</button>
+                <button style={S.btn("danger")} onClick={async ()=>{
+                  try {
+                    const delTok = await getValidToken();
+                    await supa.deleteAssessment(delTok, deleteTarget.id);
+                  } catch(e) { console.error("Delete error:", e); }
+                  setProducts(prev=>prev.filter(p=>p.id!==deleteTarget.id));
+                  setDeleteTarget(null);
+                }}>Delete</button>
+              </div>
             </div>
           </div>
         )}
       </div>
-
-      {/* DELETE MODAL */}
-      {deleteTarget && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-          <div style={{...S.card,maxWidth:400,width:"100%",padding:24}}>
-            <div style={{fontWeight:700,fontSize:16,color:NAVY,marginBottom:10}}>Delete Assessment?</div>
-            <div style={{fontSize:14,color:"#334155",marginBottom:20}}>This will permanently remove <strong>{deleteTarget.productName}</strong>. This cannot be undone.</div>
-            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-              <button style={S.btn("ghost")} onClick={()=>setDeleteTarget(null)}>Cancel</button>
-              <button style={S.btn("danger")} onClick={()=>{
-                setProducts(prev=>prev.filter(p=>p.id!==deleteTarget.id));
-                setDeleteTarget(null);
-              }}>Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
+      </div>)} {/* end session conditional */}
     </div>
   );
 }
 
-// ─── PRINT PREVIEW ────────────────────────────────────────────────────────────
-function PrintPreview({p, school, addr}) {
-  const chk = v => v ? "☑" : "☐";
+function PrintPreview({p, school, addr, orientation="landscape"}) {
+  const chk = v => v ? "Yes" : "No";
   const c = p || {};
   const ctrl = c.controls || c; // support both formats
 
@@ -1303,11 +1839,11 @@ function PrintPreview({p, school, addr}) {
     const sel = (c.hazards||[]).includes(h.key);
     return (
       <div key={h.key} style={{display:"flex",flexDirection:"column",alignItems:"center",
-        border:sel?"2px solid #c00":"1px solid #ccc",padding:3,width:76,
+        border:sel?"2px solid #c00":"1px solid #ccc",padding:2,width:52,
         background:sel?"#fff8f0":"white",opacity:sel?1:.35}}>
-        <img src={HIMGS[h.img]} alt={h.label} style={{width:26,height:26,objectFit:"contain"}} />
-        <div style={{fontSize:"5.5pt",textAlign:"center",lineHeight:1.2,marginTop:2}}>{h.label}</div>
-        <div style={{fontSize:"9pt"}}>{sel?"☑":"☐"}</div>
+        <img src={HIMGS[h.img]} alt={h.label} style={{width:18,height:18,objectFit:"contain"}} />
+        <div style={{fontSize:"4.5pt",textAlign:"center",lineHeight:1.1,marginTop:1}}>{h.label}</div>
+        <div style={{fontSize:"7pt"}}>{sel?"Yes":"No"}</div>
       </div>
     );
   });
@@ -1316,15 +1852,16 @@ function PrintPreview({p, school, addr}) {
   const th = {...td,background:"#d4edda",fontWeight:"bold",fontSize:"7pt"};
 
   return (
-    <div className="print-area" style={{background:"white",maxWidth:1060,margin:"0 auto",
-      padding:"16px 20px",boxShadow:"0 4px 24px rgba(0,0,0,.12)",fontFamily:"Arial,sans-serif",
-      fontSize:"8pt",color:"#000",lineHeight:1.3}}>
+    <div className="print-area" style={{background:"white",maxWidth:orientation==="portrait"?780:1060,margin:"0 auto",
+      padding:"10px 14px",boxShadow:"0 4px 24px rgba(0,0,0,.12)",fontFamily:"Arial,sans-serif",
+      fontSize:"7.5pt",color:"#000",lineHeight:1.2}}>
+      <style>{`@media print { @page { size: A4 ${orientation}; margin: 6mm; } }`}</style>
 
       <div style={{textAlign:"center",fontWeight:"bold",fontSize:"12pt",borderBottom:"2px solid #000",paddingBottom:6,marginBottom:4}}>
-        COSHH Assessment Form — Subject to Control of Substances Hazardous to Health Regulations
+        COSHH Assessment Form - Subject to Control of Substances Hazardous to Health Regulations
       </div>
       <div style={{textAlign:"center",fontSize:"7.5pt",color:"#333",marginBottom:8,fontStyle:"italic"}}>
-        {school && <strong>{school}</strong>}{addr && ` — ${addr}`}<br/>
+        {school && <strong>{school}</strong>}{addr && ` - ${addr}`}<br/>
         This risk assessment is to be used to identify risks and control measures for hazardous substances but not Zoonosis or Biological agents.
       </div>
       <div style={{background:"#fff8dc",border:"1px solid #e6c800",padding:"3px 6px",fontSize:"6.5pt",fontStyle:"italic",marginBottom:6}}>
@@ -1339,10 +1876,10 @@ function PrintPreview({p, school, addr}) {
             <th style={th}>Date of Assessment</th><th style={th}>Date of Review</th>
           </tr>
           <tr>
-            <td style={td}><strong>{c.productName}</strong>{c.processDesc&&<><br/><span style={{fontSize:"7pt",color:"#555"}}>{c.processDesc}</span></>}</td>
+            <td style={{...td,background:"#e6f7ee",borderLeft:"4px solid #00b050"}}><strong style={{fontSize:"9pt",color:"#1a5c32"}}>{c.productName}</strong>{c.processDesc&&<><br/><span style={{fontSize:"7pt",color:"#555"}}>{c.processDesc}</span></>}</td>
             <td style={td}>{c.location}</td><td style={td}>{c.task}</td>
-            <td style={td}>{c.assessDate ? new Date(c.assessDate).toLocaleDateString("en-GB") : "—"}</td>
-            <td style={td}>{c.reviewDate ? new Date(c.reviewDate).toLocaleDateString("en-GB") : "—"}</td>
+            <td style={td}>{c.assessDate ? new Date(c.assessDate).toLocaleDateString("en-GB") : "-"}</td>
+            <td style={td}>{c.reviewDate ? new Date(c.reviewDate).toLocaleDateString("en-GB") : "-"}</td>
           </tr>
           <tr>
             <th style={th}>Manufacturer</th><th style={{...th}} colSpan={2}>Address</th>
@@ -1362,24 +1899,24 @@ function PrintPreview({p, school, addr}) {
       </table>
 
       <div style={{background:"#1a5c32",color:"white",fontWeight:"bold",fontSize:"7.5pt",padding:"3px 6px",marginBottom:0}}>
-        HAZARD CLASSIFICATION — Tick Appropriate Boxes
+        HAZARD CLASSIFICATION - Tick Appropriate Boxes
       </div>
       <table style={{width:"100%",borderCollapse:"collapse",marginBottom:4}}>
         <tbody><tr>
           <td style={{...td,width:"62%"}}>
             <div style={{display:"flex",flexWrap:"wrap",gap:3,marginBottom:4}}>{hazCells}</div>
-            <div><strong style={{fontSize:"6.5pt"}}>H Phrases: </strong><span style={{fontSize:"7.5pt"}}>{c.hPhrases||"—"}</span></div>
+            <div><strong style={{fontSize:"6.5pt"}}>H Phrases: </strong><span style={{fontSize:"7.5pt"}}>{c.hPhrases||"-"}</span></div>
           </td>
           <td style={td}>
             <strong style={{fontSize:"6.5pt",display:"block",marginBottom:4}}>About the Substance</strong>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:"7pt"}}>
               <tbody>
-                <tr><td style={{padding:2}}><strong>Form:</strong> {c.substanceForm||"—"}</td><td style={{padding:2}}><strong>Dilution:</strong> {c.dilution||"—"}</td></tr>
-                <tr><td colSpan={2} style={{padding:2}}><strong>Route of Entry:</strong> {(c.routeOfEntry||[]).join(", ")||"—"}</td></tr>
-                <tr><td style={{padding:2}}><strong>WEL?</strong> {c.wel||"—"}</td><td style={{padding:2}}><strong>Exceeded?</strong> {c.welExceeded||"—"}</td></tr>
+                <tr><td style={{padding:2}}><strong>Form:</strong> {c.substanceForm||"-"}</td><td style={{padding:2}}><strong>Dilution:</strong> {c.dilution||"-"}</td></tr>
+                <tr><td colSpan={2} style={{padding:2}}><strong>Route of Entry:</strong> {(c.routeOfEntry||[]).join(", ")||"-"}</td></tr>
+                <tr><td style={{padding:2}}><strong>WEL?</strong> {c.wel||"-"}</td><td style={{padding:2}}><strong>Exceeded?</strong> {c.welExceeded||"-"}</td></tr>
                 <tr><td colSpan={2} style={{padding:2}}><strong>H&S advisor contacted?</strong> {c.welHSContacted||"N/A"}</td></tr>
-                <tr><td colSpan={2} style={{padding:2}}><strong>Amount stored:</strong> {c.amountStored||"—"} | <strong>Per op:</strong> {c.amountUsed||"—"}</td></tr>
-                <tr><td style={{padding:2}}><strong>Duration:</strong> {c.duration||"—"}</td><td style={{padding:2}}><strong>Frequency:</strong> {c.frequency||"—"}</td></tr>
+                <tr><td colSpan={2} style={{padding:2}}><strong>Amount stored:</strong> {c.amountStored||"-"} | <strong>Per op:</strong> {c.amountUsed||"-"}</td></tr>
+                <tr><td style={{padding:2}}><strong>Duration:</strong> {c.duration||"-"}</td><td style={{padding:2}}><strong>Frequency:</strong> {c.frequency||"-"}</td></tr>
               </tbody>
             </table>
           </td>
@@ -1387,28 +1924,28 @@ function PrintPreview({p, school, addr}) {
       </table>
 
       <div style={{background:"#1a5c32",color:"white",fontWeight:"bold",fontSize:"7.5pt",padding:"3px 6px"}}>
-        CONTROLS REQUIRED — <span style={{fontWeight:"normal"}}>NB: Controls are identified within Safety Data Sheets and guidance found in the Corporate PPE procedure.</span>
+        CONTROLS REQUIRED - <span style={{fontWeight:"normal"}}>NB: Controls are identified within Safety Data Sheets and guidance found in the Corporate PPE procedure.</span>
       </div>
       <table style={{width:"100%",borderCollapse:"collapse",marginBottom:4}}>
         <tbody>
           <tr>
             <td style={{...td,width:"12%"}}><strong>Ventilation</strong></td>
-            <td style={td}>{chk(c.ventGeneral)} General &nbsp; {chk(c.ventLEV)} LEV &nbsp; {chk(c.airMonitor)} Air Monitor &nbsp; {chk(c.ventNA)} N/A</td>
+            <td style={td}>{chk(c.ventGeneral)} General   {chk(c.ventLEV)} LEV   {chk(c.airMonitor)} Air Monitor   {chk(c.ventNA)} N/A</td>
             <td style={{...td,width:"12%"}}><strong>Skin Protection</strong></td>
-            <td style={td}>{chk(c.preCreams)} Pre-work Creams &nbsp; {chk(c.gloves)} Gloves &nbsp; {chk(c.apron)} Apron &nbsp; {chk(c.footwear)} Footwear{c.footwearType&&`: ${c.footwearType}`} &nbsp; {chk(c.skinNA)} N/A</td>
+            <td style={td}>{chk(c.preCreams)} Pre-work Creams   {chk(c.gloves)} Gloves   {chk(c.apron)} Apron   {chk(c.footwear)} Footwear{c.footwearType&&`: ${c.footwearType}`}   {chk(c.skinNA)} N/A</td>
           </tr>
           <tr>
             <td style={td}><strong>Respiratory</strong></td>
-            <td style={td}>{chk(c.halfMask)} Half Mask &nbsp; {chk(c.fullMask)} Full Mask &nbsp; {chk(c.dustMask)} Dust Mask &nbsp; {chk(c.respNA)} N/A {c.protFactor&&`— RPF: ${c.protFactor}`}</td>
+            <td style={td}>{chk(c.halfMask)} Half Mask   {chk(c.fullMask)} Full Mask   {chk(c.dustMask)} Dust Mask   {chk(c.respNA)} N/A {c.protFactor&&`- RPF: ${c.protFactor}`}</td>
             <td style={td}><strong>Eye & Face</strong></td>
-            <td style={td}>{chk(c.safetySpecs)} Spectacles &nbsp; {chk(c.goggles)} Goggles &nbsp; {chk(c.faceShield)} Face Shield &nbsp; {chk(c.eyeNA)} N/A</td>
+            <td style={td}>{chk(c.safetySpecs)} Spectacles   {chk(c.goggles)} Goggles   {chk(c.faceShield)} Face Shield   {chk(c.eyeNA)} N/A</td>
           </tr>
           <tr>
-            <td style={td} colSpan={2}><strong>Health Surveillance: </strong>{chk(c.staffTrained)} Self-exam &nbsp; {chk(c.healthSurv)} Surveillance req. &nbsp; {chk(c.occupHealth)} OCU programme &nbsp; {chk(c.sysMonitored)} System monitored</td>
+            <td style={td} colSpan={2}><strong>Health Surveillance: </strong>{chk(c.staffTrained)} Self-exam   {chk(c.healthSurv)} Surveillance req.   {chk(c.occupHealth)} OCU programme   {chk(c.sysMonitored)} System monitored</td>
             <td style={td} colSpan={2}>
-                <strong>Stand-alone product?</strong> {c.standalone||"—"} &nbsp;|&nbsp;
-                <strong>Used in combination?</strong> {c.accumulated||"—"} &nbsp;|&nbsp;
-                <strong>Accumulation considered?</strong> {c.separateAssess||"—"} &nbsp;|&nbsp;
+                <strong>Stand-alone product?</strong> {c.standalone||"-"}  | 
+                <strong>Used in combination?</strong> {c.accumulated||"-"}  | 
+                <strong>Accumulation considered?</strong> {c.separateAssess||"-"}  | 
                 <strong>Separate assessment in place?</strong> {c.separateAssessConfirm?"Yes":"No"}
               </td>
           </tr>
@@ -1416,7 +1953,7 @@ function PrintPreview({p, school, addr}) {
       </table>
 
       <div style={{background:"#1a5c32",color:"white",fontWeight:"bold",fontSize:"7.5pt",padding:"3px 6px"}}>
-        SAFE WORKING INSTRUCTIONS FOR OPERATIVE — <span style={{fontWeight:"normal"}}>Share with all persons carrying out tasks where hazardous substances are used.</span>
+        SAFE WORKING INSTRUCTIONS FOR OPERATIVE - <span style={{fontWeight:"normal"}}>Share with all persons carrying out tasks where hazardous substances are used.</span>
       </div>
       <table style={{width:"100%",borderCollapse:"collapse",marginBottom:4}}>
         <tbody>
@@ -1451,7 +1988,7 @@ function PrintPreview({p, school, addr}) {
           <tr>
             <td style={{...td,fontSize:"7pt",fontStyle:"italic"}}>Assessor</td>
             <td style={{...td,height:32}}>{c.assessorName}{c.assessorTitle&&` / ${c.assessorTitle}`}</td>
-            <td style={{...td,height:32,borderBottom:"1px solid #333"}}>&nbsp;</td>
+            <td style={{...td,height:32,borderBottom:"1px solid #333"}}> </td>
             <td style={{...td,height:32}}>{c.assessDate ? new Date(c.assessDate).toLocaleDateString("en-GB") : ""}</td>
           </tr>
           <tr>
@@ -1461,8 +1998,8 @@ function PrintPreview({p, school, addr}) {
           <tr>
             <td style={{...td,fontSize:"7pt",fontStyle:"italic"}}>Responsible Manager</td>
             <td style={{...td,height:32}}>{c.managerName}{c.managerTitle&&` / ${c.managerTitle}`}</td>
-            <td style={{...td,height:32,borderBottom:"1px solid #333"}}>&nbsp;</td>
-            <td style={{...td,height:32,borderBottom:"1px solid #333"}}>&nbsp;</td>
+            <td style={{...td,height:32,borderBottom:"1px solid #333"}}> </td>
+            <td style={{...td,height:32,borderBottom:"1px solid #333"}}> </td>
           </tr>
         </tbody>
       </table>
@@ -1474,6 +2011,15 @@ function PrintPreview({p, school, addr}) {
   );
 }
 
+  </script>
+  <script>
+    window.addEventListener("load", function() {
+      const src = document.getElementById("app-src").textContent;
+      const transformed = Babel.transform(src, { presets: ["react"] }).code;
+      eval(transformed);
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(React.createElement(App));
+    });
   </script>
   <script>
     window.addEventListener("load", function() {
