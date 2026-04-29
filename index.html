@@ -1,9 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
+<!-- v1777456625 -->
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>COSHH Manager</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1NiA2NCI+PHBhdGggZD0iTTQgNCBMNTIgNCBMNTIgNDIgUTUyIDU4IDI4IDYzIFE0IDU4IDQgNDIgWiIgZmlsbD0iIzFhNWMzMiIvPjxwYXRoIGQ9Ik04IDggTDQ4IDggTDQ4IDQyIFE0OCA1NCAyOCA1OSBROCA1NCA4IDQyIFoiIGZpbGw9IiMwMGIwNTAiLz48cG9seWxpbmUgcG9pbnRzPSIxNCwzOCAyMyw0OSA0MiwyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSI1LjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg==" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/react@18.2.0/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.development.js"></script>
@@ -13,6 +15,17 @@
   <div id="root"></div>
   <script type="text/plain" id="app-src">
 const { useState, useEffect, useCallback, useRef } = React;
+
+function ShieldLogo({size=32}) {
+  return (
+    <svg width={size} height={size*1.15} viewBox="0 0 56 64" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4 4 L52 4 L52 42 Q52 58 28 63 Q4 58 4 42 Z" fill="#1a5c32"/>
+      <path d="M8 8 L48 8 L48 42 Q48 54 28 59 Q8 54 8 42 Z" fill="#00b050"/>
+      <polyline points="14,38 23,49 42,24" fill="none" stroke="white" strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
 
 // --- SUPABASE CONFIG ----------------------------------------------------------
 const SUPA_URL = "https://sygvcscvmkylymsdhens.supabase.co";
@@ -436,7 +449,7 @@ function LoginScreen({ onLogin }) {
   return (
     <div style={{minHeight:"100vh",background:"#f8fafc",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{textAlign:"center",marginBottom:28,maxWidth:480}}>
-        <div style={{width:64,height:64,background:NAVY,borderRadius:16,display:"flex",alignItems:"center",justifyContent:"center",fontSize:32,margin:"0 auto 14px"}}>🛡</div>
+        <div style={{width:72,height:72,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px"}}><ShieldLogo size={68} /></div>
         <div style={{fontSize:26,fontWeight:800,color:NAVY,marginBottom:6}}>COSHH Manager</div>
         <div style={{fontSize:14,color:"#334155",marginBottom:16,lineHeight:1.6}}>
           The fast, simple way for school caretakers and site managers to complete, store and manage COSHH assessments — built on the Hampshire County Council template.
@@ -1076,7 +1089,7 @@ ${JSON_RULES}`;
       {/* Main app */}
       <header style={S.header} className="no-print">
         <div style={{display:"flex", alignItems:"center", gap:10}}>
-          <div style={{width:34,height:34,background:GREEN,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🛡</div>
+          <div style={{width:34,height:34,display:"flex",alignItems:"center",justifyContent:"center"}}><ShieldLogo size={30} /></div>
           <div>
             <div style={{color:"white",fontWeight:700,fontSize:15}}>COSHH Manager</div>
           </div>
@@ -1532,7 +1545,7 @@ ${JSON_RULES}`;
                   <div style={{marginBottom:4}}>
                     <div style={{background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:6,padding:"10px 14px",marginBottom:10}}>
                       <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
-                        <span style={{fontSize:16,marginTop:1}}>⚠️</span>
+                        <span style={{fontSize:16,marginTop:1}}>⚠</span>
                         <div>
                           <div style={{fontSize:13,fontWeight:600,color:"#92400e",marginBottom:3}}>AI-generated content — review required</div>
                           <div style={{fontSize:12,color:"#92400e",lineHeight:1.6}}>Product safety data may have changed since this was retrieved. Always verify all fields against the current Safety Data Sheet (SDS) before saving. The responsible person remains accountable for the accuracy of this assessment.</div>
@@ -2009,6 +2022,15 @@ function PrintPreview({p, school, addr, orientation="landscape"}) {
   );
 }
 
+  </script>
+  <script>
+    window.addEventListener("load", function() {
+      const src = document.getElementById("app-src").textContent;
+      const transformed = Babel.transform(src, { presets: ["react"] }).code;
+      eval(transformed);
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(React.createElement(App));
+    });
   </script>
   <script>
     window.addEventListener("load", function() {
