@@ -1,11 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
-<!-- v1777382163 -->
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>COSHH Manager</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1NiA2NCI+PHBhdGggZD0iTTQgNCBMNTIgNCBMNTIgNDIgUTUyIDU4IDI4IDYzIFE0IDU4IDQgNDIgWiIgZmlsbD0iIzFhNWMzMiIvPjxwYXRoIGQ9Ik04IDggTDQ4IDggTDQ4IDQyIFE0OCA1NCAyOCA1OSBROCA1NCA4IDQyIFoiIGZpbGw9IiMwMGIwNTAiLz48cG9seWxpbmUgcG9pbnRzPSIxNCwzOCAyMyw0OSA0MiwyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSI1LjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg==" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://unpkg.com/react@18.2.0/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.development.js"></script>
@@ -1534,7 +1532,7 @@ ${JSON_RULES}`;
                   <div style={{marginBottom:4}}>
                     <div style={{background:"#fef3c7",border:"1px solid #fcd34d",borderRadius:6,padding:"10px 14px",marginBottom:10}}>
                       <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
-                        <span style={{fontSize:16,marginTop:1}}>⚠</span>
+                        <span style={{fontSize:16,marginTop:1}}>⚠️</span>
                         <div>
                           <div style={{fontSize:13,fontWeight:600,color:"#92400e",marginBottom:3}}>AI-generated content — review required</div>
                           <div style={{fontSize:12,color:"#92400e",lineHeight:1.6}}>Product safety data may have changed since this was retrieved. Always verify all fields against the current Safety Data Sheet (SDS) before saving. The responsible person remains accountable for the accuracy of this assessment.</div>
@@ -2011,15 +2009,6 @@ function PrintPreview({p, school, addr, orientation="landscape"}) {
   );
 }
 
-  </script>
-  <script>
-    window.addEventListener("load", function() {
-      const src = document.getElementById("app-src").textContent;
-      const transformed = Babel.transform(src, { presets: ["react"] }).code;
-      eval(transformed);
-      const root = ReactDOM.createRoot(document.getElementById("root"));
-      root.render(React.createElement(App));
-    });
   </script>
   <script>
     window.addEventListener("load", function() {
