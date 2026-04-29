@@ -1042,6 +1042,7 @@ ${JSON_RULES}`;
         @media print {
           .no-print { display:none !important; }
           .print-area { padding:6mm; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
           header { display:none !important; }
         }
         ::-webkit-scrollbar { width:6px; } ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:3px; }
@@ -1665,7 +1666,14 @@ ${JSON_RULES}`;
                       color:printOrientation==="portrait"?"white":"#64748b",fontWeight:600}}>Portrait</button>
                 </div>
                 <button style={S.btn("ghost")} onClick={()=>setTab("form")}> Back</button>
-                <button style={S.btn("green")} onClick={()=>window.print()}>🖨 Print / Save PDF</button>
+                <button style={S.btn("green")} onClick={()=>{
+                  const name = printData?.productName || "COSHH-Assessment";
+                  const safe = name.replace(/[^a-zA-Z0-9]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+                  const prev = document.title;
+                  document.title = safe;
+                  window.print();
+                  document.title = prev;
+                }}>🖨 Print / Save PDF</button>
               </div>
             </div>
             {printData ? <PrintPreview p={printData} school={settings.schoolName} addr={settings.schoolAddress} orientation={printOrientation} /> : (
